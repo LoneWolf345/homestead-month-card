@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.5";
+const HCM_VERSION = "2026.9.6";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -161,7 +161,7 @@ class HomesteadMonthCard extends HTMLElement {
     const { start } = this._range(disp);
     const hols = c.show_holidays ? this._holidays(y) : {};
     this._uid = this._uid || Math.random().toString(36).slice(2, 7);
-    const cells = [];
+    const weeks = [];
     const ws = this._ws();
     const totalCells = (() => { const last = new Date(y, mo + 1, 0); const lead = (new Date(y, mo, 1).getDay() - ws + 7) % 7; return Math.ceil((last.getDate() + lead) / 7) * 7; })();
     const spans = this._spans || [];
@@ -170,37 +170,34 @@ class HomesteadMonthCard extends HTMLElement {
     for (let w = 0; w < totalCells / 7; w++) {
       const wk = [];
       for (let j = 0; j < 7; j++) { const d = new Date(start); d.setDate(start.getDate() + w * 7 + j); wk.push(d); }
-      const w0 = ymd(wk[0]), w6 = ymd(wk[6]);
+      const kk = wk.map(ymd);
+      const w0 = kk[0], w6 = kk[6];
       const weekSpans = spans.filter((sp) => sp.s <= w6 && sp.e >= w0);
       const lanes = [];
       const placed = weekSpans.map((sp) => { let li = lanes.findIndex((endY) => endY < sp.s); if (li === -1) { li = lanes.length; lanes.push(sp.e); } else lanes[li] = sp.e; return { sp, li }; });
+      const maxLanes = placed.length ? Math.max(...placed.map((p) => p.li)) + 1 : 0;
+      // one continuous element per span per week, spanning its grid columns
+      const laneBars = placed.map(({ sp, li }) => {
+        const a = kk.indexOf(sp.s < w0 ? w0 : sp.s), b = kk.indexOf(sp.e > w6 ? w6 : sp.e);
+        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${2 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
+      }).join("");
+      let ovls = "", chs = "", cellevs = "";
       for (let j = 0; j < 7; j++) {
-        const d = wk[j], k = ymd(d), inMonth = d.getMonth() === mo;
-        const isToday = k === today, past = k < today;
+        const d = wk[j], k = kk[j], inMonth = d.getMonth() === mo;
+        const isToday = k === today, past = k < today && c.strike_past;
         const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
         const evs = (this._events && this._events[k]) || [];
-        const dayPlaced = placed.filter((p) => p.sp.s <= k && p.sp.e >= k);
-        const bday = evs.some((e) => e.stamp === "cake") || dayPlaced.some((p) => p.sp.stamp === "cake");
-        let laneHtml = "";
-        if (dayPlaced.length) {
-          const maxLane = Math.max(...dayPlaced.map((p) => p.li));
-          for (let li = 0; li <= maxLane; li++) {
-            const p = dayPlaced.find((x) => x.li === li);
-            if (!p) { laneHtml += '<div class="ev gap"><span class="txt">&nbsp;</span></div>'; continue; }
-            const first = p.sp.s === k || j === 0;
-            laneHtml += `<div class="ev ad seg${p.sp.s === k ? " segstart" : ""}${p.sp.e === k ? " segend" : ""}" style="--hl:${esc(p.sp.color)}">${first ? `<span class="txt">${p.sp.t ? `<b>${esc(p.sp.t)}</b> ` : ""}${esc(p.sp.sum)}</span>${p.sp.stamp && !(bday && p.sp.stamp === "cake") ? this._stampSvg(p.sp.stamp) : ""}` : '<span class="txt">&nbsp;</span>'}</div>`;
-          }
-        }
+        const bday = evs.some((e) => e.stamp === "cake") || placed.some((p) => p.sp.stamp === "cake" && p.sp.s <= k && p.sp.e >= k);
+        ovls += `<div class="dovl${isToday ? " today" : ""}" style="--j:${j}">${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}${past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}</div>`;
+        const fade = `${inMonth ? "" : " out"}${past ? " fade" : ""}`;
+        chs += `<div class="ch${fade}" style="grid-column:${j + 1};grid-row:1"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>`;
         const shown = evs.slice(0, maxEv), extra = evs.length - shown.length;
         const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
-        cells.push(`<div class="cell${inMonth ? "" : " out"}${isToday ? " today" : ""}${past && c.strike_past ? " past" : ""}">
-          ${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}
-          <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>
-          <div class="evs">${laneHtml}${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>
-          ${past && c.strike_past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}
-        </div>`);
+        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:${2 + maxLanes}">${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>`;
       }
+      weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto ${"auto ".repeat(maxLanes)}1fr">${chs}${laneBars}${cellevs}</div></div>`);
     }
+    const cells = weeks;
     const legend = c.calendars.map((x) => `<span class="chip" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
     const vol = `Vol. ${y - 2020}, No. ${mo + 1}`;
     const body = `
@@ -213,7 +210,7 @@ class HomesteadMonthCard extends HTMLElement {
       <div class="mrow2"><span class="rule"></span><span class="month">${MONTHS[mo]} ${y}</span>${this._offset !== 0 ? '<span class="ret">HOME RETURNS TO THE PRESENT</span>' : ""}<span class="rule"></span></div>
     </div>
     <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
-    <div class="grid" style="--rows:${totalCells / 7}">${cells.join("")}</div>
+    <div class="weeks">${cells.join("")}</div>
     <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
     return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}</div>` };
   }
@@ -236,30 +233,33 @@ class HomesteadMonthCard extends HTMLElement {
   .ret { font-size: 1.1vmin; font-weight: 700; letter-spacing: 0.2vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.2vmin 0.5vw; transform: rotate(-2deg); white-space: nowrap; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1.5px solid ${INK}; }
   .dow div { text-align: center; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vmin 0 0.4vmin; }
-  .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(var(--rows), 1fr); border-left: 1px solid ${DOT}; min-height: 0; }
-  .cell { position: relative; border-right: 1px solid ${DOT}; border-bottom: 1px solid ${DOT}; padding: 0.4vmin 0.35vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
-  .cell.out { opacity: .45; }
-  .cell.today { box-shadow: inset 0 0 0 3px ${INK}; background: #efe0c6; }
-  .ch { display: flex; align-items: baseline; gap: 0.4vw; }
+  .weeks { flex: 1; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid ${DOT}; border-right: 1px solid ${DOT}; }
+  .week { flex: 1; position: relative; min-height: 0; border-bottom: 1px solid ${DOT}; }
+  .ovls { position: absolute; inset: 0; }
+  .dovl { position: absolute; top: 0; bottom: 0; left: calc(var(--j) * 100% / 7); width: calc(100% / 7); pointer-events: none; }
+  .dovl.today { background: #efe0c6; box-shadow: inset 0 0 0 3px ${INK}; }
+  .wgrid { position: relative; height: 100%; display: grid; grid-template-columns: repeat(7, 1fr); min-height: 0; overflow: hidden;
+    background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(100% / 7 - 1px), ${DOT} calc(100% / 7 - 1px), ${DOT} calc(100% / 7)); }
+  .out { opacity: .45; }
+  .fade { opacity: .62; }
+  .lane { margin: 0.14vmin 0; padding: 0.12vmin 0.3vw; display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vmin; line-height: 1.25; font-weight: 700; letter-spacing: 0.04vw; background: color-mix(in srgb, var(--hl) 28%, transparent); min-width: 0; overflow: hidden; }
+  .lane.lstart { border-left: 0.22vw solid var(--hl); }
+  .lane .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .cellev { padding: 0.3vmin 0.35vw 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; overflow: hidden; min-width: 0; min-height: 0; }
+  .ch { display: flex; align-items: baseline; gap: 0.4vw; padding: 0.4vmin 0.35vw 0; min-width: 0; }
   .num { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.2vmin; line-height: 1; }
   .hol { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.25vmin; color: ${BROWN}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 0.2vw; min-width: 0; }
-  .evs { margin-top: 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; min-height: 0; overflow: hidden; }
   .ev { display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vmin; line-height: 1.25; padding: 0.12vmin 0.3vw; background: color-mix(in srgb, var(--hl) 28%, transparent); border-left: 0.22vw solid var(--hl); min-height: 0; }
   .ev.ad { font-weight: 700; letter-spacing: 0.04vw; }
   .ev .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
   .ev b { font-weight: 700; color: #241c12; }
-  .ev.seg { margin-left: calc(-0.35vw - 1px); margin-right: calc(-0.35vw - 1px); border-left: none; }
-  .ev.segstart { margin-left: 0; border-left: 0.22vw solid var(--hl); }
-  .ev.segend { margin-right: 0; }
-  .ev.gap { visibility: hidden; }
   .more { font-size: 1.05vmin; color: ${TAN}; font-style: italic; }
   .stamp { width: 2.1vmin; height: 2.1vmin; flex: none; stroke: ${STAMP}; color: ${STAMP}; transform: rotate(-8deg); opacity: .9; }
   .stamp.hs { width: 1.7vmin; height: 1.7vmin; transform: rotate(6deg); }
   .stamp circle, .stamp path { stroke: ${STAMP}; }
   .bigstamp { position: absolute; right: 0.4vw; bottom: 0.5vmin; width: 52%; max-width: 11vmin; aspect-ratio: 1; opacity: .4; pointer-events: none; }
   .bigstamp .stamp { width: 100%; height: 100%; transform: rotate(-11deg); }
-  .cell .x { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top right, transparent 47.5%, ${GRAPHITE} 47.5%, ${GRAPHITE} 49.2%, transparent 49.2%), linear-gradient(to top left, transparent 47.5%, ${GRAPHITE}55 47.5%, ${GRAPHITE}55 49.2%, transparent 49.2%); opacity: .5; }
-  .cell.past .evs, .cell.past .ch { opacity: .62; }
+  .dovl .x { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top right, transparent 47.5%, ${GRAPHITE} 47.5%, ${GRAPHITE} 49.2%, transparent 49.2%), linear-gradient(to top left, transparent 47.5%, ${GRAPHITE}55 47.5%, ${GRAPHITE}55 49.2%, transparent 49.2%); opacity: .5; }
   .td { position: absolute; right: 0.3vw; bottom: 0.3vmin; font-size: 1vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.1vmin 0.35vw; transform: rotate(-3deg); opacity: .85; }
   .foot { text-align: center; font-size: 1.1vmin; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vmin 0 0.3vmin; }`;
   }
