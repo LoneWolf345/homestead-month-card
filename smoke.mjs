@@ -25,6 +25,8 @@ const EV = {
   ],
   "calendar.family": [
     { summary: "NO SCHOOL", start: { date: "2026-09-28" }, end: { date: "2026-10-03" } },
+    { summary: "Midway sleepover - San Diego weekend", start: { dateTime: "2026-09-25T00:00:00-07:00" }, end: { dateTime: "2026-09-27T23:45:00-07:00" } },
+    { summary: "Late shift", start: { dateTime: "2026-09-08T22:00:00-07:00" }, end: { dateTime: "2026-09-09T02:00:00-07:00" } },
     ...Array.from({ length: 9 }, (_, i) => ({ summary: "Busy thing " + (i + 1), start: { dateTime: `2026-09-17T${String(8 + i).padStart(2, "0")}:00:00-07:00` }, end: { dateTime: `2026-09-17T${String(9 + i).padStart(2, "0")}:00:00-07:00` } })),
   ],
 };
@@ -43,7 +45,9 @@ const h = el.shadowRoot.innerHTML;
 check("masthead + month", h.includes("The Homestead Times") && h.includes("SEPTEMBER 2026") && h.includes("CALENDAR &amp; ALMANACK"));
 check("35 cells, 5 rows", (h.match(/class="cell/g) || []).length === 35 && h.includes("--rows:5"));
 check("legend chips", (h.match(/class="chip"/g) || []).length === 3);
-check("day-of-year agate 250/115 on Sep 7", h.includes(">250/115<"));
+check("day-count agate removed", !h.includes("250/115") && !h.includes('class="agate"'));
+check("timed multi-day → 3-segment span, no 12a prefix, plane stamp once", (() => { const segs = h.match(/class="ev ad seg[^"]*"[^>]*>[\s\S]*?<\/div>/g) || []; const mid = segs.filter(s => /Midway sleepover/.test(s)); return (h.match(/Midway sleepover/g) || []).length === 1 && !/12a<\/b> Midway/.test(h) && mid.length === 1 && (h.match(/M8 19 l16 -7/g) || []).length === 1; })());
+check("overnight timed event (10p–2a) spans two days", (h.match(/Late shift/g) || []).length === 1 && /segstart[^"]*" style="--hl:#5f7e94"><span class="txt"><b>10p<\/b> Late shift/.test(h));
 check("Labor Day printed Sep 7 with star stamp", h.includes("Labor Day") && (h.match(/#st|star|hs/g) || []).length > 0 && h.includes('class="stamp hs"'));
 check("today box + TODAY tag on the 5th", (h.match(/class="cell today"/g) || []).length === 1 && h.includes(">TODAY<"));
 check("week starts Monday", /class="dow"><div>MONDAY<\/div>/.test(h) && h.includes("<div>SUNDAY</div></div>"));
@@ -52,7 +56,7 @@ check("timed event bar: 4p popcorn", h.includes("<b>4p</b> Popcorn sales · Mari
 check("6:30p scouts", h.includes("<b>6:30p</b> 6:30 Cub Scouts"));
 check("birthday bar renders all-day in celebrations color", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday/.test(h));
 check("anniversary → rings glyph present", h.includes("Wedding Anniversary") && h.includes('<circle cx="13" cy="17"'));
-check("no-school week: one spanning bar, 5 segments, text printed once", (h.match(/class="ev ad seg/g) || []).length === 5 && (h.match(/>NO SCHOOL</g) || []).length === 1 && (h.match(/segstart/g) || []).length >= 1 && (h.match(/segend/g) || []).length >= 1 && (h.match(/M16 9 c-4 0/g) || []).length === 1);
+check("spans: 10 segments total (5 no-school + 3 midway + 2 late shift), NO SCHOOL text once", (h.match(/class="ev ad seg/g) || []).length === 10 && (h.match(/>NO SCHOOL</g) || []).length === 1 && (h.match(/segstart/g) || []).length === 4 && (h.match(/segend/g) || []).length === 4 && (h.match(/M16 9 c-4 0/g) || []).length === 1);
 check("soccer → ball, dentist → cross", h.includes('cx="16" cy="16" r="7"') && h.includes('M16 11.5 v9'));
 check("overflow: and 2 more", h.includes("and 2 more, see inside"));
 check("rubber filter def present once", (h.match(/feTurbulence/g) || []).length === 1);
@@ -60,7 +64,7 @@ check("rubber filter def present once", (h.match(/feTurbulence/g) || []).length 
 el._nav(1); await tick(); await tick();
 const h2 = el.shadowRoot.innerHTML;
 check("nav +1: OCTOBER 2026 + return badge, no today cell", h2.includes("OCTOBER 2026") && h2.includes("HOME RETURNS TO THE PRESENT") && !/class="cell today"/.test(h2));
-check("nav +1: October agates (Oct 7 = 280/85)", h2.includes(">280/85<"));
+check("nav +1: no agates in October either", !/\d+\/\d+</.test(h2.split('class="grid"')[1] || ""));
 check("nav +1: Halloween printed", h2.includes("Halloween"));
 el._nav(0, true); await tick(); await tick();
 const h3 = el.shadowRoot.innerHTML;

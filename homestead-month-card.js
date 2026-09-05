@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.4";
+const HCM_VERSION = "2026.9.5";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -114,7 +114,10 @@ class HomesteadMonthCard extends HTMLElement {
               else (map[s] = map[s] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp });
             } else if (ev.start && ev.start.dateTime) {
               const d = new Date(ev.start.dateTime);
-              (map[ymd(d)] = map[ymd(d)] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp });
+              const endRaw = ev.end && ev.end.dateTime ? new Date(new Date(ev.end.dateTime).getTime() - 60000) : d; // a midnight end belongs to the prior day
+              const sDay = ymd(d), eDay = ymd(endRaw < d ? d : endRaw);
+              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: d.getHours() === 0 && d.getMinutes() === 0 ? "" : fmtT(ev.start.dateTime) });
+              else (map[sDay] = map[sDay] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp });
             }
           }
         } catch (e) { /* calendar unavailable this pass */ }
@@ -156,7 +159,6 @@ class HomesteadMonthCard extends HTMLElement {
     const disp = this._dispDate();
     const y = disp.getFullYear(), mo = disp.getMonth();
     const { start } = this._range(disp);
-    const daysInYear = leap(y) ? 366 : 365;
     const hols = c.show_holidays ? this._holidays(y) : {};
     this._uid = this._uid || Math.random().toString(36).slice(2, 7);
     const cells = [];
@@ -175,7 +177,6 @@ class HomesteadMonthCard extends HTMLElement {
       for (let j = 0; j < 7; j++) {
         const d = wk[j], k = ymd(d), inMonth = d.getMonth() === mo;
         const isToday = k === today, past = k < today;
-        const dn = doy(d);
         const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
         const evs = (this._events && this._events[k]) || [];
         const dayPlaced = placed.filter((p) => p.sp.s <= k && p.sp.e >= k);
@@ -187,14 +188,14 @@ class HomesteadMonthCard extends HTMLElement {
             const p = dayPlaced.find((x) => x.li === li);
             if (!p) { laneHtml += '<div class="ev gap"><span class="txt">&nbsp;</span></div>'; continue; }
             const first = p.sp.s === k || j === 0;
-            laneHtml += `<div class="ev ad seg${p.sp.s === k ? " segstart" : ""}${p.sp.e === k ? " segend" : ""}" style="--hl:${esc(p.sp.color)}">${first ? `<span class="txt">${esc(p.sp.sum)}</span>${p.sp.stamp && !(bday && p.sp.stamp === "cake") ? this._stampSvg(p.sp.stamp) : ""}` : '<span class="txt">&nbsp;</span>'}</div>`;
+            laneHtml += `<div class="ev ad seg${p.sp.s === k ? " segstart" : ""}${p.sp.e === k ? " segend" : ""}" style="--hl:${esc(p.sp.color)}">${first ? `<span class="txt">${p.sp.t ? `<b>${esc(p.sp.t)}</b> ` : ""}${esc(p.sp.sum)}</span>${p.sp.stamp && !(bday && p.sp.stamp === "cake") ? this._stampSvg(p.sp.stamp) : ""}` : '<span class="txt">&nbsp;</span>'}</div>`;
           }
         }
         const shown = evs.slice(0, maxEv), extra = evs.length - shown.length;
         const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
         cells.push(`<div class="cell${inMonth ? "" : " out"}${isToday ? " today" : ""}${past && c.strike_past ? " past" : ""}">
           ${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}
-          <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}<span class="agate">${dn}/${daysInYear - dn}</span></div>
+          <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>
           <div class="evs">${laneHtml}${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>
           ${past && c.strike_past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}
         </div>`);
@@ -241,7 +242,6 @@ class HomesteadMonthCard extends HTMLElement {
   .cell.today { box-shadow: inset 0 0 0 3px ${INK}; background: #efe0c6; }
   .ch { display: flex; align-items: baseline; gap: 0.4vw; }
   .num { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.2vmin; line-height: 1; }
-  .agate { margin-left: auto; font-size: 1vmin; color: ${TAN}; letter-spacing: 0.05vw; }
   .hol { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.25vmin; color: ${BROWN}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 0.2vw; min-width: 0; }
   .evs { margin-top: 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; min-height: 0; overflow: hidden; }
   .ev { display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vmin; line-height: 1.25; padding: 0.12vmin 0.3vw; background: color-mix(in srgb, var(--hl) 28%, transparent); border-left: 0.22vw solid var(--hl); min-height: 0; }

@@ -7,7 +7,7 @@
 **What it prints**
 
 - **A masthead** with the paper's name, volume line, and a highlighter **legend** — one color per calendar, just like the family's marker scheme.
-- **The month grid** (Monday first, like the paper original; `week_start: sunday` flips it). **Multi-day events draw as one continuous highlighter bar spanning their days** — lane-aligned across the week, titled once, broken only by the cell rules like a printed calendar. Every cell carries the big Fraunces day number and the paper-calendar **day-of-year agate** (`250/115` — day of year / days remaining).
+- **The month grid** (Monday first, like the paper original; `week_start: sunday` flips it). **Multi-day events draw as one continuous highlighter bar spanning their days** — lane-aligned across the week, titled once, broken only by the cell rules like a printed calendar. Every cell carries the big Fraunces day number. **Timed events that cross midnight (trips, sleepovers) span days just like all-day ones.**
 - **Events as highlighter bars** — translucent color per calendar with a solid left edge; timed events lead with a compact `6:30p`; all-day events print bold; a too-busy day ends with *"and 2 more, see inside."*
 - **Rubber stamps** — small eroded-ink stamps (SVG turbulence, no images) beside matching events: 🎂 cake for birthdays, interlocked rings for anniversaries, a struck bell for NO SCHOOL, a soccer ball for games and practices, a plane for trips, a cross for appointments, and a star beside printed holidays.
 - **Holidays computed in-card** (US fixed and floating: Labor Day, Thanksgiving, and friends) printed in italics in the cell.
