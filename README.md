@@ -13,7 +13,7 @@
 - **Holidays computed in-card** (US fixed and floating: Labor Day, Thanksgiving, and friends) printed in italics in the cell.
 - **Past days struck through in pencil** — the way she crosses them off — and **today boxed in ink** with a tilted TODAY stamp.
 
-Read-only, data-dense, sized for a TV in landscape. Refreshes every 15 minutes and rolls to the new month on its own.
+Read-only, data-dense, sized for a TV in landscape. Refreshes every 15 minutes and rolls to the new month on its own. **Keyboard paging** for wall boxes without a touchscreen: `←`/`→` (also PgUp/PgDn or `p`/`n`) turn the month, `Home`/`Esc`/`t` return to the present — and after 5 idle minutes off-month it returns by itself (`auto_return` seconds, 0 disables).
 
 ## Installation (HACS)
 
@@ -51,6 +51,7 @@ views:
 | `max_events` | `7` | Bars per cell before "and N more" |
 | `height` | `100vh` | The page height (use `calc(100vh - 56px)` if you keep the HA header) |
 | `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` |
+| `auto_return` | `300` | Seconds off-month before snapping back to today (0 = never) |
 | `footer` | house line | Bottom agate |
 
 ## Stamp rules (built in)

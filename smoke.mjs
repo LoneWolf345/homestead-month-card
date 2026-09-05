@@ -5,7 +5,7 @@ class HTMLElement { constructor() { this._sr = null; this.style = {}; } attachSh
 const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
-const ctx = { HTMLElement, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, Date: FakeDate, Math, encodeURIComponent };
+const ctx = { HTMLElement, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(src, ctx);
 const Card = defs["homestead-month-card"];
 let fails = 0;
@@ -55,4 +55,14 @@ check("no-school week: bell on 3 in-month days + 2 out", (h.match(/M16 9 c-4 0/g
 check("soccer → ball, dentist → cross", h.includes('cx="16" cy="16" r="7"') && h.includes('M16 11.5 v9'));
 check("overflow: and 2 more", h.includes("and 2 more, see inside"));
 check("rubber filter def present once", (h.match(/feTurbulence/g) || []).length === 1);
+
+el._nav(1); await tick(); await tick();
+const h2 = el.shadowRoot.innerHTML;
+check("nav +1: OCTOBER 2026 + return badge, no today cell", h2.includes("OCTOBER 2026") && h2.includes("HOME RETURNS TO THE PRESENT") && !/class="cell today"/.test(h2));
+check("nav +1: October agates (Oct 7 = 280/85)", h2.includes(">280/85<"));
+check("nav +1: Halloween printed", h2.includes("Halloween"));
+el._nav(0, true); await tick(); await tick();
+const h3 = el.shadowRoot.innerHTML;
+check("HOME returns: September + today box back, badge gone", h3.includes("SEPTEMBER 2026") && /class="cell today"/.test(h3) && !h3.includes("HOME RETURNS"));
+check("footer carries the key hint", h3.includes("keys turn the month; HOME returns."));
 console.log(fails ? `\n${fails} FAILED` : "\nall passed"); process.exit(fails ? 1 : 0);

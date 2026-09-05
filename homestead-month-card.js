@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.1";
+const HCM_VERSION = "2026.9.2";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -44,14 +44,14 @@ class HomesteadMonthCard extends HTMLElement {
     if (!config || !Array.isArray(config.calendars) || !config.calendars.length) throw new Error("homestead-month-card: set calendars: [{entity, name, color}]");
     const c = Object.assign({
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
-      max_events: 7, height: "100vh", stamps: [],
+      max_events: 7, height: "100vh", stamps: [], auto_return: 300,
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
     this._cfg = c;
     this._rules = [...(c.stamps || []).map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp })), ...DEFAULT_STAMPS.map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp }))];
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    this._sig = null; this._events = null; this._fetchAt = 0; this._fetchKey = "";
+    this._sig = null; this._events = null; this._fetchAt = 0; this._fetchKey = ""; this._offset = 0;
     if (this._fontsReady === undefined) {
       const fonts = typeof document !== "undefined" && document.fonts;
       this._fontsReady = !fonts;
@@ -61,23 +61,41 @@ class HomesteadMonthCard extends HTMLElement {
   }
   set hass(hass) { this._hass = hass; this._maybeFetch(); this._render(); }
   getCardSize() { return 20; }
-  connectedCallback() { this._tick = setInterval(() => { this._maybeFetch(); this._render(); }, 60000); }
-  disconnectedCallback() { clearInterval(this._tick); }
+  connectedCallback() {
+    this._tick = setInterval(() => { this._maybeFetch(); this._render(); }, 60000);
+    // keyboard month paging for wall displays without a touchscreen
+    this._key = (e) => {
+      const tag = e.target && e.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "n") this._nav(1);
+      else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "p") this._nav(-1);
+      else if (e.key === "Home" || e.key === "Escape" || e.key === "t") this._nav(0, true);
+    };
+    window.addEventListener("keydown", this._key);
+  }
+  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); clearTimeout(this._ret); }
+  _dispDate() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + this._offset, 1); }
+  _nav(delta, home) {
+    this._offset = home ? 0 : this._offset + delta;
+    clearTimeout(this._ret);
+    if (this._offset !== 0 && this._cfg.auto_return > 0) this._ret = setTimeout(() => this._nav(0, true), this._cfg.auto_return * 1000);
+    this._sig = null; this._maybeFetch(); this._render();
+  }
 
-  _range(now) {
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  _range(disp) {
+    const first = new Date(disp.getFullYear(), disp.getMonth(), 1);
     const start = new Date(first); start.setDate(1 - first.getDay());
-    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const last = new Date(disp.getFullYear(), disp.getMonth() + 1, 0);
     const end = new Date(last); end.setDate(last.getDate() + (6 - last.getDay())); end.setHours(23, 59, 59, 0);
     return { start, end };
   }
   async _maybeFetch() {
     if (!this._hass || !this._hass.callApi) return;
-    const now = new Date(), key = `${now.getFullYear()}-${now.getMonth()}`;
+    const disp = this._dispDate(), key = `${disp.getFullYear()}-${disp.getMonth()}`;
     if (this._fetching || (Date.now() - this._fetchAt < 15 * 60000 && this._fetchKey === key)) return;
     this._fetching = true;
     try {
-      const { start, end } = this._range(now);
+      const { start, end } = this._range(disp);
       const map = {};
       await Promise.all(this._cfg.calendars.map(async (cal) => {
         try {
@@ -128,8 +146,9 @@ class HomesteadMonthCard extends HTMLElement {
 
   _page() {
     const c = this._cfg, now = new Date(), today = ymd(now);
-    const y = now.getFullYear(), mo = now.getMonth();
-    const { start } = this._range(now);
+    const disp = this._dispDate();
+    const y = disp.getFullYear(), mo = disp.getMonth();
+    const { start } = this._range(disp);
     const daysInYear = leap(y) ? 366 : 365;
     const hols = c.show_holidays ? this._holidays(y) : {};
     this._uid = this._uid || Math.random().toString(36).slice(2, 7);
@@ -159,12 +178,12 @@ class HomesteadMonthCard extends HTMLElement {
       <feComposite in="SourceGraphic" in2="a" operator="in"/></filter></defs></svg>
     <div class="mast">
       <div class="mrow1"><span class="mvol">${esc(vol)} · ${esc(c.subtitle)}</span><span class="mname">${esc(c.title)}</span><span class="mleg">${legend}</span></div>
-      <div class="mrow2"><span class="rule"></span><span class="month">${MONTHS[mo]} ${y}</span><span class="rule"></span></div>
+      <div class="mrow2"><span class="rule"></span><span class="month">${MONTHS[mo]} ${y}</span>${this._offset !== 0 ? '<span class="ret">HOME RETURNS TO THE PRESENT</span>' : ""}<span class="rule"></span></div>
     </div>
     <div class="dow">${DOW.map((d) => `<div>${d}</div>`).join("")}</div>
     <div class="grid" style="--rows:${totalCells / 7}">${cells.join("")}</div>
-    <div class="foot">${esc(c.footer)}</div>`;
-    return { sig: today + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}</div>` };
+    <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
+    return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}</div>` };
   }
 
   _css() {
@@ -182,6 +201,7 @@ class HomesteadMonthCard extends HTMLElement {
   .mrow2 { display: flex; align-items: center; gap: 1vw; margin-top: 0.3vh; }
   .mrow2 .rule { flex: 1; border-top: 1px solid ${INK}; }
   .month { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.5vh; letter-spacing: 0.35vw; }
+  .ret { font-size: 1.1vh; font-weight: 700; letter-spacing: 0.2vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.2vh 0.5vw; transform: rotate(-2deg); white-space: nowrap; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1.5px solid ${INK}; }
   .dow div { text-align: center; font-size: 1.25vh; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vh 0 0.4vh; }
   .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(var(--rows), 1fr); border-left: 1px solid ${DOT}; min-height: 0; }
