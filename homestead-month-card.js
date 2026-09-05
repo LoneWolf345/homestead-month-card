@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.7";
+const HCM_VERSION = "2026.9.8";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -179,7 +179,7 @@ class HomesteadMonthCard extends HTMLElement {
       // one continuous element per span per week, spanning its grid columns
       const laneBars = placed.map(({ sp, li }) => {
         const a = kk.indexOf(sp.s < w0 ? w0 : sp.s), b = kk.indexOf(sp.e > w6 ? w6 : sp.e);
-        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${2 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
+        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${3 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
       }).join("");
       let ovls = "", chs = "", cellevs = "";
       for (let j = 0; j < 7; j++) {
@@ -193,9 +193,9 @@ class HomesteadMonthCard extends HTMLElement {
         chs += `<div class="ch${fade}" style="grid-column:${j + 1};grid-row:1"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>`;
         const shown = evs.slice(0, maxEv), extra = evs.length - shown.length;
         const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
-        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:${2 + maxLanes}">${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>`;
+        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:2">${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>`;
       }
-      weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto ${"auto ".repeat(maxLanes)}1fr">${chs}${laneBars}${cellevs}</div></div>`);
+      weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto 1fr ${"auto ".repeat(maxLanes)}">${chs}${laneBars}${cellevs}</div></div>`);
     }
     const cells = weeks;
     const legend = c.calendars.map((x) => `<span class="chip" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
