@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.8";
+const HCM_VERSION = "2026.9.9";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -128,6 +128,16 @@ class HomesteadMonthCard extends HTMLElement {
     } finally { this._fetching = false; }
   }
   _stampFor(sum) { for (const r of this._rules) if (r.re.test(sum)) return r.stamp; return ""; }
+  // a hand-drawn pencil X, seeded by the date so each day's cross-off is its own but stays put
+  _strikeSvg(key) {
+    let h = 2166136261; for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    const rnd = () => { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
+    const j = (a, b) => a + rnd() * (b - a);
+    const stroke = (x1, y1, x2, y2) => { const mx = (x1 + x2) / 2 + j(-9, 9), my = (y1 + y2) / 2 + j(-9, 9); return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}" opacity="${j(0.28, 0.52).toFixed(2)}" stroke-width="${j(1.3, 2.4).toFixed(1)}"/>`; };
+    let s = stroke(j(3, 13), j(4, 15), j(87, 97), j(85, 96)) + stroke(j(87, 97), j(4, 15), j(3, 13), j(85, 96));
+    if (rnd() > 0.55) s += stroke(j(6, 15), j(7, 17), j(85, 95), j(83, 94)); // she sometimes goes over it twice
+    return `<svg class="xs" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${s}</svg>`;
+  }
   _holidays(y) {
     const h = {
       "01-01": "New Year's Day", "02-14": "Valentine's Day", "06-19": "Juneteenth", "07-04": "Independence Day",
@@ -188,7 +198,7 @@ class HomesteadMonthCard extends HTMLElement {
         const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
         const evs = (this._events && this._events[k]) || [];
         const bday = evs.some((e) => e.stamp === "cake") || placed.some((p) => p.sp.stamp === "cake" && p.sp.s <= k && p.sp.e >= k);
-        ovls += `<div class="dovl${isToday ? " today" : ""}" style="--j:${j}">${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}${past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}</div>`;
+        ovls += `<div class="dovl${isToday ? " today" : ""}" style="--j:${j}">${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}${past ? this._strikeSvg(k) : ""}${isToday ? '<div class="td">TODAY</div>' : ""}</div>`;
         const fade = `${inMonth ? "" : " out"}${past ? " fade" : ""}`;
         chs += `<div class="ch${fade}" style="grid-column:${j + 1};grid-row:1"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>`;
         const shown = evs.slice(0, maxEv), extra = evs.length - shown.length;
@@ -260,7 +270,8 @@ class HomesteadMonthCard extends HTMLElement {
   .stamp circle, .stamp path { stroke: ${STAMP}; }
   .bigstamp { position: absolute; right: 0.4vw; bottom: 0.5vmin; width: 52%; max-width: 11vmin; aspect-ratio: 1; opacity: .4; pointer-events: none; }
   .bigstamp .stamp { width: 100%; height: 100%; transform: rotate(-11deg); }
-  .dovl .x { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top right, transparent 47.5%, ${GRAPHITE} 47.5%, ${GRAPHITE} 49.2%, transparent 49.2%), linear-gradient(to top left, transparent 47.5%, ${GRAPHITE}55 47.5%, ${GRAPHITE}55 49.2%, transparent 49.2%); opacity: .5; }
+  .xs { position: absolute; inset: 1% 3%; width: 94%; height: 98%; pointer-events: none; stroke: ${GRAPHITE}; fill: none; stroke-linecap: round; }
+  .xs path { vector-effect: non-scaling-stroke; }
   .td { position: absolute; right: 0.3vw; bottom: 0.3vmin; font-size: 1vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.1vmin 0.35vw; transform: rotate(-3deg); opacity: .85; }
   .foot { text-align: center; font-size: 1.1vmin; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vmin 0 0.3vmin; }`;
   }

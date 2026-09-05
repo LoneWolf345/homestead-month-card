@@ -51,7 +51,7 @@ check("overnight timed event (10p–2a) is one lane over two days", (h.match(/La
 check("Labor Day printed Sep 7 with star stamp", h.includes("Labor Day") && (h.match(/#st|star|hs/g) || []).length > 0 && h.includes('class="stamp hs"'));
 check("today overlay + TODAY tag on the 5th", (h.match(/class="dovl today"/g) || []).length === 1 && h.includes(">TODAY<"));
 check("week starts Monday", /class="dow"><div>MONDAY<\/div>/.test(h) && h.includes("<div>SUNDAY</div></div>"));
-check("past days struck (incl. out-month lead-in)", (h.match(/class="x"/g) || []).length === 5);
+check("past days struck with hand-drawn X (incl. out-month lead-in)", (h.match(/class="xs"/g) || []).length === 5 && (h.match(/<path d="M\d/g) || []).length >= 10);
 check("timed event bar: 4p popcorn", h.includes("<b>4p</b> Popcorn sales · Maricopa Fry&#39;s"));
 check("6:30p scouts", h.includes("<b>6:30p</b> 6:30 Cub Scouts"));
 check("birthday bar renders all-day in celebrations color", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday/.test(h));
