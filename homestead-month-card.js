@@ -189,9 +189,9 @@ class HomesteadMonthCard extends HTMLElement {
       // one continuous element per span per week, spanning its grid columns
       const laneBars = placed.map(({ sp, li }) => {
         const a = kk.indexOf(sp.s < w0 ? w0 : sp.s), b = kk.indexOf(sp.e > w6 ? w6 : sp.e);
-        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${3 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
+        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${4 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
       }).join("");
-      let ovls = "", chs = "", cellevs = "";
+      let ovls = "", chs = "", cellevs = "", adcells = "";
       for (let j = 0; j < 7; j++) {
         const d = wk[j], k = kk[j], inMonth = d.getMonth() === mo;
         const isToday = k === today, past = k < today && c.strike_past;
@@ -204,9 +204,10 @@ class HomesteadMonthCard extends HTMLElement {
         const bar = (e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`;
         const adays = evs.filter((e) => e.allDay), timed = evs.filter((e) => !e.allDay);
         const shownTimed = timed.slice(0, Math.max(1, maxEv - adays.length)), extra = timed.length - shownTimed.length;
-        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:2">${shownTimed.map(bar).join("")}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}${adays.length ? `<div class="adrow">${adays.map(bar).join("")}</div>` : ""}</div>`;
+        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:2">${shownTimed.map(bar).join("")}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>`;
+        adcells += `<div class="adcell${fade}" style="grid-column:${j + 1};grid-row:3">${adays.map(bar).join("")}</div>`;
       }
-      weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto 1fr ${"auto ".repeat(maxLanes)}">${chs}${laneBars}${cellevs}</div></div>`);
+      weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto 1fr auto ${"auto ".repeat(maxLanes)}">${chs}${laneBars}${cellevs}${adcells}</div></div>`);
     }
     const cells = weeks;
     const legend = c.calendars.map((x) => `<span class="chip" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
@@ -258,7 +259,7 @@ class HomesteadMonthCard extends HTMLElement {
   .lane.lend { margin-right: 0.35vw; }
   .lane .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .cellev { padding: 0.3vmin 0.35vw 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; overflow: hidden; min-width: 0; min-height: 0; }
-  .adrow { margin-top: auto; display: flex; flex-direction: column; gap: 0.28vmin; min-width: 0; }
+  .adcell { padding: 0 0.35vw 0.2vmin; display: flex; flex-direction: column; gap: 0.28vmin; overflow: hidden; min-width: 0; }
   .ch { display: flex; align-items: baseline; gap: 0.4vw; padding: 0.4vmin 0.35vw 0; min-width: 0; }
   .num { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.2vmin; line-height: 1; }
   .hol { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.25vmin; color: ${BROWN}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 0.2vw; min-width: 0; }
