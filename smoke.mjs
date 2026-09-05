@@ -55,6 +55,7 @@ check("past days struck with hand-drawn X (incl. out-month lead-in)", (h.match(/
 check("timed event bar: 4p popcorn", h.includes("<b>4p</b> Popcorn sales · Maricopa Fry&#39;s"));
 check("6:30p scouts", h.includes("<b>6:30p</b> 6:30 Cub Scouts"));
 check("birthday bar renders all-day in celebrations color", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday/.test(h));
+check("single-day all-day events sit in the bottom adrow group", /class="adrow"><div class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,120}Sarah&#39;s Birthday/.test(h) && (h.match(/class="adrow"/g) || []).length >= 2);
 check("anniversary → rings glyph present", h.includes("Wedding Anniversary") && h.includes('<circle cx="13" cy="17"'));
 check("spans: 3 continuous lanes with aligned start+end edges; NO SCHOOL over Mon–Fri; bell once", (h.match(/class="lane lstart lend"/g) || []).length === 3 && (h.match(/>NO SCHOOL</g) || []).length === 1 && /grid-column:1\/6;grid-row:3"><span class="txt">NO SCHOOL/.test(h) && (h.match(/M16 9 c-4 0/g) || []).length === 1);
 check("soccer → ball, dentist → cross", h.includes('cx="16" cy="16" r="7"') && h.includes('M16 11.5 v9'));
