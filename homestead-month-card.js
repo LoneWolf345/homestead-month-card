@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.3";
+const HCM_VERSION = "2026.9.4";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -44,14 +44,14 @@ class HomesteadMonthCard extends HTMLElement {
     if (!config || !Array.isArray(config.calendars) || !config.calendars.length) throw new Error("homestead-month-card: set calendars: [{entity, name, color}]");
     const c = Object.assign({
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
-      max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300,
+      max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300, week_start: "monday",
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
     this._cfg = c;
     this._rules = [...(c.stamps || []).map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp })), ...DEFAULT_STAMPS.map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp }))];
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    this._sig = null; this._events = null; this._fetchAt = 0; this._fetchKey = ""; this._offset = 0;
+    this._sig = null; this._events = null; this._spans = null; this._fetchAt = 0; this._fetchKey = ""; this._offset = 0;
     if (this._fontsReady === undefined) {
       const fonts = typeof document !== "undefined" && document.fonts;
       this._fontsReady = !fonts;
@@ -83,11 +83,13 @@ class HomesteadMonthCard extends HTMLElement {
     this._sig = null; this._maybeFetch(); this._render();
   }
 
+  _ws() { return this._cfg.week_start === "sunday" ? 0 : 1; }
   _range(disp) {
+    const ws = this._ws();
     const first = new Date(disp.getFullYear(), disp.getMonth(), 1);
-    const start = new Date(first); start.setDate(1 - first.getDay());
+    const start = new Date(first); start.setDate(1 - ((first.getDay() - ws + 7) % 7));
     const last = new Date(disp.getFullYear(), disp.getMonth() + 1, 0);
-    const end = new Date(last); end.setDate(last.getDate() + (6 - last.getDay())); end.setHours(23, 59, 59, 0);
+    const end = new Date(last); end.setDate(last.getDate() + (6 - ((last.getDay() - ws + 7) % 7))); end.setHours(23, 59, 59, 0);
     return { start, end };
   }
   async _maybeFetch() {
@@ -97,7 +99,7 @@ class HomesteadMonthCard extends HTMLElement {
     this._fetching = true;
     try {
       const { start, end } = this._range(disp);
-      const map = {};
+      const map = {}; const spans = [];
       await Promise.all(this._cfg.calendars.map(async (cal) => {
         try {
           const evs = await this._hass.callApi("get", `calendars/${cal.entity}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
@@ -105,8 +107,11 @@ class HomesteadMonthCard extends HTMLElement {
             const sum = ev.summary || "";
             const stamp = this._stampFor(sum) || cal.stamp || "";
             if (ev.start && ev.start.date) {
-              const s = new Date(ev.start.date + "T00:00:00"), e = new Date((ev.end && ev.end.date ? ev.end.date : ev.start.date) + "T00:00:00");
-              for (let d = new Date(s); d < e || +d === +s; d.setDate(d.getDate() + 1)) { (map[ymd(d)] = map[ymd(d)] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp }); if (+d === +s && !(d < e)) break; }
+              const s = ev.start.date;
+              const eDate = new Date(((ev.end && ev.end.date) || s) + "T00:00:00"); eDate.setDate(eDate.getDate() - 1); // end date is exclusive
+              const eInc = ymd(eDate) < s ? s : ymd(eDate);
+              if (eInc > s) spans.push({ s, e: eInc, sum, color: cal.color, stamp });
+              else (map[s] = map[s] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp });
             } else if (ev.start && ev.start.dateTime) {
               const d = new Date(ev.start.dateTime);
               (map[ymd(d)] = map[ymd(d)] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp });
@@ -115,7 +120,8 @@ class HomesteadMonthCard extends HTMLElement {
         } catch (e) { /* calendar unavailable this pass */ }
       }));
       for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
-      this._events = map; this._fetchAt = Date.now(); this._fetchKey = key; this._sig = null; this._render();
+      spans.sort((a, b) => (a.s < b.s ? -1 : 1));
+      this._events = map; this._spans = spans; this._fetchAt = Date.now(); this._fetchKey = key; this._sig = null; this._render();
     } finally { this._fetching = false; }
   }
   _stampFor(sum) { for (const r of this._rules) if (r.re.test(sum)) return r.stamp; return ""; }
@@ -154,24 +160,45 @@ class HomesteadMonthCard extends HTMLElement {
     const hols = c.show_holidays ? this._holidays(y) : {};
     this._uid = this._uid || Math.random().toString(36).slice(2, 7);
     const cells = [];
-    const totalCells = (() => { const last = new Date(y, mo + 1, 0); return Math.ceil((last.getDate() + new Date(y, mo, 1).getDay()) / 7) * 7; })();
-    for (let i = 0; i < totalCells; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      const k = ymd(d), inMonth = d.getMonth() === mo;
-      const isToday = k === today, past = k < today;
-      const dn = doy(d);
-      const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
-      const evs = (this._events && this._events[k]) || [];
-      const portrait = this._mq ? this._mq.matches : false;
-      const shown = evs.slice(0, portrait ? c.max_events_portrait : c.max_events), extra = evs.length - shown.length;
-      const bday = evs.some((e) => e.stamp === "cake");
-      const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
-      cells.push(`<div class="cell${inMonth ? "" : " out"}${isToday ? " today" : ""}${past && c.strike_past ? " past" : ""}">
-        ${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}
-        <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}<span class="agate">${dn}/${daysInYear - dn}</span></div>
-        <div class="evs">${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>
-        ${past && c.strike_past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}
-      </div>`);
+    const ws = this._ws();
+    const totalCells = (() => { const last = new Date(y, mo + 1, 0); const lead = (new Date(y, mo, 1).getDay() - ws + 7) % 7; return Math.ceil((last.getDate() + lead) / 7) * 7; })();
+    const spans = this._spans || [];
+    const portrait = this._mq ? this._mq.matches : false;
+    const maxEv = portrait ? c.max_events_portrait : c.max_events;
+    for (let w = 0; w < totalCells / 7; w++) {
+      const wk = [];
+      for (let j = 0; j < 7; j++) { const d = new Date(start); d.setDate(start.getDate() + w * 7 + j); wk.push(d); }
+      const w0 = ymd(wk[0]), w6 = ymd(wk[6]);
+      const weekSpans = spans.filter((sp) => sp.s <= w6 && sp.e >= w0);
+      const lanes = [];
+      const placed = weekSpans.map((sp) => { let li = lanes.findIndex((endY) => endY < sp.s); if (li === -1) { li = lanes.length; lanes.push(sp.e); } else lanes[li] = sp.e; return { sp, li }; });
+      for (let j = 0; j < 7; j++) {
+        const d = wk[j], k = ymd(d), inMonth = d.getMonth() === mo;
+        const isToday = k === today, past = k < today;
+        const dn = doy(d);
+        const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
+        const evs = (this._events && this._events[k]) || [];
+        const dayPlaced = placed.filter((p) => p.sp.s <= k && p.sp.e >= k);
+        const bday = evs.some((e) => e.stamp === "cake") || dayPlaced.some((p) => p.sp.stamp === "cake");
+        let laneHtml = "";
+        if (dayPlaced.length) {
+          const maxLane = Math.max(...dayPlaced.map((p) => p.li));
+          for (let li = 0; li <= maxLane; li++) {
+            const p = dayPlaced.find((x) => x.li === li);
+            if (!p) { laneHtml += '<div class="ev gap"><span class="txt">&nbsp;</span></div>'; continue; }
+            const first = p.sp.s === k || j === 0;
+            laneHtml += `<div class="ev ad seg${p.sp.s === k ? " segstart" : ""}${p.sp.e === k ? " segend" : ""}" style="--hl:${esc(p.sp.color)}">${first ? `<span class="txt">${esc(p.sp.sum)}</span>${p.sp.stamp && !(bday && p.sp.stamp === "cake") ? this._stampSvg(p.sp.stamp) : ""}` : '<span class="txt">&nbsp;</span>'}</div>`;
+          }
+        }
+        const shown = evs.slice(0, maxEv), extra = evs.length - shown.length;
+        const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
+        cells.push(`<div class="cell${inMonth ? "" : " out"}${isToday ? " today" : ""}${past && c.strike_past ? " past" : ""}">
+          ${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}
+          <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}<span class="agate">${dn}/${daysInYear - dn}</span></div>
+          <div class="evs">${laneHtml}${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>
+          ${past && c.strike_past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}
+        </div>`);
+      }
     }
     const legend = c.calendars.map((x) => `<span class="chip" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
     const vol = `Vol. ${y - 2020}, No. ${mo + 1}`;
@@ -184,7 +211,7 @@ class HomesteadMonthCard extends HTMLElement {
       <div class="mrow1"><span class="mvol">${esc(vol)} · ${esc(c.subtitle)}</span><span class="mname">${esc(c.title)}</span><span class="mleg">${legend}</span></div>
       <div class="mrow2"><span class="rule"></span><span class="month">${MONTHS[mo]} ${y}</span>${this._offset !== 0 ? '<span class="ret">HOME RETURNS TO THE PRESENT</span>' : ""}<span class="rule"></span></div>
     </div>
-    <div class="dow">${DOW.map((d) => `<div>${d}</div>`).join("")}</div>
+    <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
     <div class="grid" style="--rows:${totalCells / 7}">${cells.join("")}</div>
     <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
     return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}</div>` };
@@ -221,6 +248,10 @@ class HomesteadMonthCard extends HTMLElement {
   .ev.ad { font-weight: 700; letter-spacing: 0.04vw; }
   .ev .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
   .ev b { font-weight: 700; color: #241c12; }
+  .ev.seg { margin-left: calc(-0.35vw - 1px); margin-right: calc(-0.35vw - 1px); border-left: none; }
+  .ev.segstart { margin-left: 0; border-left: 0.22vw solid var(--hl); }
+  .ev.segend { margin-right: 0; }
+  .ev.gap { visibility: hidden; }
   .more { font-size: 1.05vmin; color: ${TAN}; font-style: italic; }
   .stamp { width: 2.1vmin; height: 2.1vmin; flex: none; stroke: ${STAMP}; color: ${STAMP}; transform: rotate(-8deg); opacity: .9; }
   .stamp.hs { width: 1.7vmin; height: 1.7vmin; transform: rotate(6deg); }
