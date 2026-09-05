@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.2";
+const HCM_VERSION = "2026.9.3";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -44,7 +44,7 @@ class HomesteadMonthCard extends HTMLElement {
     if (!config || !Array.isArray(config.calendars) || !config.calendars.length) throw new Error("homestead-month-card: set calendars: [{entity, name, color}]");
     const c = Object.assign({
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
-      max_events: 7, height: "100vh", stamps: [], auto_return: 300,
+      max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300,
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
@@ -72,8 +72,9 @@ class HomesteadMonthCard extends HTMLElement {
       else if (e.key === "Home" || e.key === "Escape" || e.key === "t") this._nav(0, true);
     };
     window.addEventListener("keydown", this._key);
+    if (typeof matchMedia === "function") { this._mq = matchMedia("(orientation: portrait)"); this._mqf = () => { this._sig = null; this._render(); }; try { this._mq.addEventListener("change", this._mqf); } catch (e) { /* older webview */ } }
   }
-  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); clearTimeout(this._ret); }
+  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); }
   _dispDate() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + this._offset, 1); }
   _nav(delta, home) {
     this._offset = home ? 0 : this._offset + delta;
@@ -161,9 +162,12 @@ class HomesteadMonthCard extends HTMLElement {
       const dn = doy(d);
       const hol = hols[`${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`];
       const evs = (this._events && this._events[k]) || [];
-      const shown = evs.slice(0, c.max_events), extra = evs.length - shown.length;
-      const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp ? this._stampSvg(e.stamp) : ""}</div>`).join("");
+      const portrait = this._mq ? this._mq.matches : false;
+      const shown = evs.slice(0, portrait ? c.max_events_portrait : c.max_events), extra = evs.length - shown.length;
+      const bday = evs.some((e) => e.stamp === "cake");
+      const bars = shown.map((e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`).join("");
       cells.push(`<div class="cell${inMonth ? "" : " out"}${isToday ? " today" : ""}${past && c.strike_past ? " past" : ""}">
+        ${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}
         <div class="ch"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}<span class="agate">${dn}/${daysInYear - dn}</span></div>
         <div class="evs">${bars}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>
         ${past && c.strike_past ? '<div class="x"></div>' : ""}${isToday ? '<div class="td">TODAY</div>' : ""}
@@ -191,40 +195,42 @@ class HomesteadMonthCard extends HTMLElement {
     return `
   :host { display: block; }
   * { box-sizing: border-box; }
-  .page { height: ${c.height}; display: flex; flex-direction: column; background: var(--almanac-paper, ${PAPER}); color: ${INK}; font-family: Archivo, 'Segoe UI', sans-serif; padding: 1.1vh 1.2vw 0.6vh; overflow: hidden; }
-  .mast { border-bottom: 3px double ${INK}; padding-bottom: 0.4vh; }
+  .page { height: ${c.height}; display: flex; flex-direction: column; background: var(--almanac-paper, ${PAPER}); color: ${INK}; font-family: Archivo, 'Segoe UI', sans-serif; padding: 1.1vmin 1.2vw 0.6vmin; overflow: hidden; }
+  .mast { border-bottom: 3px double ${INK}; padding-bottom: 0.4vmin; }
   .mrow1 { display: flex; justify-content: space-between; align-items: baseline; gap: 1vw; }
-  .mvol { font-size: 1.15vh; font-weight: 700; letter-spacing: 0.2vw; color: ${TAN}; white-space: nowrap; }
-  .mname { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 3.1vh; letter-spacing: 0.05vw; white-space: nowrap; }
+  .mvol { font-size: 1.15vmin; font-weight: 700; letter-spacing: 0.2vw; color: ${TAN}; white-space: nowrap; }
+  .mname { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 3.1vmin; letter-spacing: 0.05vw; white-space: nowrap; }
   .mleg { display: flex; gap: 0.5vw; flex-wrap: wrap; justify-content: flex-end; }
-  .chip { font-size: 1.15vh; font-weight: 700; letter-spacing: 0.08vw; padding: 0.25vh 0.5vw; background: color-mix(in srgb, var(--hl) 30%, transparent); border-left: 0.25vw solid var(--hl); }
-  .mrow2 { display: flex; align-items: center; gap: 1vw; margin-top: 0.3vh; }
+  .chip { font-size: 1.15vmin; font-weight: 700; letter-spacing: 0.08vw; padding: 0.25vmin 0.5vw; background: color-mix(in srgb, var(--hl) 30%, transparent); border-left: 0.25vw solid var(--hl); }
+  .mrow2 { display: flex; align-items: center; gap: 1vw; margin-top: 0.3vmin; }
   .mrow2 .rule { flex: 1; border-top: 1px solid ${INK}; }
-  .month { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.5vh; letter-spacing: 0.35vw; }
-  .ret { font-size: 1.1vh; font-weight: 700; letter-spacing: 0.2vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.2vh 0.5vw; transform: rotate(-2deg); white-space: nowrap; }
+  .month { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.5vmin; letter-spacing: 0.35vw; }
+  .ret { font-size: 1.1vmin; font-weight: 700; letter-spacing: 0.2vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.2vmin 0.5vw; transform: rotate(-2deg); white-space: nowrap; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1.5px solid ${INK}; }
-  .dow div { text-align: center; font-size: 1.25vh; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vh 0 0.4vh; }
+  .dow div { text-align: center; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vmin 0 0.4vmin; }
   .grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(var(--rows), 1fr); border-left: 1px solid ${DOT}; min-height: 0; }
-  .cell { position: relative; border-right: 1px solid ${DOT}; border-bottom: 1px solid ${DOT}; padding: 0.4vh 0.35vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .cell { position: relative; border-right: 1px solid ${DOT}; border-bottom: 1px solid ${DOT}; padding: 0.4vmin 0.35vw; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
   .cell.out { opacity: .45; }
   .cell.today { box-shadow: inset 0 0 0 3px ${INK}; background: #efe0c6; }
   .ch { display: flex; align-items: baseline; gap: 0.4vw; }
-  .num { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.2vh; line-height: 1; }
-  .agate { margin-left: auto; font-size: 1vh; color: ${TAN}; letter-spacing: 0.05vw; }
-  .hol { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.25vh; color: ${BROWN}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 0.2vw; min-width: 0; }
-  .evs { margin-top: 0.4vh; display: flex; flex-direction: column; gap: 0.28vh; min-height: 0; overflow: hidden; }
-  .ev { display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vh; line-height: 1.25; padding: 0.12vh 0.3vw; background: color-mix(in srgb, var(--hl) 28%, transparent); border-left: 0.22vw solid var(--hl); min-height: 0; }
+  .num { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.2vmin; line-height: 1; }
+  .agate { margin-left: auto; font-size: 1vmin; color: ${TAN}; letter-spacing: 0.05vw; }
+  .hol { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.25vmin; color: ${BROWN}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 0.2vw; min-width: 0; }
+  .evs { margin-top: 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; min-height: 0; overflow: hidden; }
+  .ev { display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vmin; line-height: 1.25; padding: 0.12vmin 0.3vw; background: color-mix(in srgb, var(--hl) 28%, transparent); border-left: 0.22vw solid var(--hl); min-height: 0; }
   .ev.ad { font-weight: 700; letter-spacing: 0.04vw; }
   .ev .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
   .ev b { font-weight: 700; color: #241c12; }
-  .more { font-size: 1.05vh; color: ${TAN}; font-style: italic; }
-  .stamp { width: 2.1vh; height: 2.1vh; flex: none; stroke: ${STAMP}; color: ${STAMP}; transform: rotate(-8deg); opacity: .9; }
-  .stamp.hs { width: 1.7vh; height: 1.7vh; transform: rotate(6deg); }
+  .more { font-size: 1.05vmin; color: ${TAN}; font-style: italic; }
+  .stamp { width: 2.1vmin; height: 2.1vmin; flex: none; stroke: ${STAMP}; color: ${STAMP}; transform: rotate(-8deg); opacity: .9; }
+  .stamp.hs { width: 1.7vmin; height: 1.7vmin; transform: rotate(6deg); }
   .stamp circle, .stamp path { stroke: ${STAMP}; }
+  .bigstamp { position: absolute; right: 0.4vw; bottom: 0.5vmin; width: 52%; max-width: 11vmin; aspect-ratio: 1; opacity: .4; pointer-events: none; }
+  .bigstamp .stamp { width: 100%; height: 100%; transform: rotate(-11deg); }
   .cell .x { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to top right, transparent 47.5%, ${GRAPHITE} 47.5%, ${GRAPHITE} 49.2%, transparent 49.2%), linear-gradient(to top left, transparent 47.5%, ${GRAPHITE}55 47.5%, ${GRAPHITE}55 49.2%, transparent 49.2%); opacity: .5; }
   .cell.past .evs, .cell.past .ch { opacity: .62; }
-  .td { position: absolute; right: 0.3vw; bottom: 0.3vh; font-size: 1vh; font-weight: 700; letter-spacing: 0.25vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.1vh 0.35vw; transform: rotate(-3deg); opacity: .85; }
-  .foot { text-align: center; font-size: 1.1vh; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vh 0 0.3vh; }`;
+  .td { position: absolute; right: 0.3vw; bottom: 0.3vmin; font-size: 1vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.1vmin 0.35vw; transform: rotate(-3deg); opacity: .85; }
+  .foot { text-align: center; font-size: 1.1vmin; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vmin 0 0.3vmin; }`;
   }
 }
 

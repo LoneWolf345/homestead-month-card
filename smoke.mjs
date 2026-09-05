@@ -49,7 +49,7 @@ check("today box + TODAY tag on the 5th", (h.match(/class="cell today"/g) || [])
 check("past days struck (incl. out-month lead-in)", (h.match(/class="x"/g) || []).length === 6);
 check("timed event bar: 4p popcorn", h.includes("<b>4p</b> Popcorn sales · Maricopa Fry&#39;s"));
 check("6:30p scouts", h.includes("<b>6:30p</b> 6:30 Cub Scouts"));
-check("birthday → cake stamp on an all-day bar", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday[\s\S]{0,400}?<svg class="stamp"/.test(h));
+check("birthday bar renders all-day in celebrations color", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday/.test(h));
 check("anniversary → rings glyph present", h.includes("Wedding Anniversary") && h.includes('<circle cx="13" cy="17"'));
 check("no-school week: bell on 3 in-month days + 2 out", (h.match(/M16 9 c-4 0/g) || []).length >= 5 && (h.match(/>NO SCHOOL</g) || []).length >= 5);
 check("soccer → ball, dentist → cross", h.includes('cx="16" cy="16" r="7"') && h.includes('M16 11.5 v9'));
@@ -65,4 +65,7 @@ el._nav(0, true); await tick(); await tick();
 const h3 = el.shadowRoot.innerHTML;
 check("HOME returns: September + today box back, badge gone", h3.includes("SEPTEMBER 2026") && /class="cell today"/.test(h3) && !h3.includes("HOME RETURNS"));
 check("footer carries the key hint", h3.includes("keys turn the month; HOME returns."));
+check("big cake stamp on the birthday cell", (h3.match(/class="bigstamp"/g) || []).length === 1 && h3.includes('class="stamp big"'));
+check("inline cake suppressed when big cake present", !/Sarah&#39;s Birthday<\/span><svg class="stamp"/.test(h3));
+check("sizes in vmin, page height stays 100vh", h3.includes("2.2vmin") && h3.includes("height: 100vh"));
 console.log(fails ? `\n${fails} FAILED` : "\nall passed"); process.exit(fails ? 1 : 0);
