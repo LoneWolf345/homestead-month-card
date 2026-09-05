@@ -46,7 +46,7 @@ check("masthead + month", h.includes("The Homestead Times") && h.includes("SEPTE
 check("35 day headers, 5 week rows", (h.match(/class="ch[" ]/g) || []).length === 35 && (h.match(/class="week">/g) || []).length === 5);
 check("legend chips", (h.match(/class="chip"/g) || []).length === 3);
 check("day-count agate removed", !h.includes("250/115") && !h.includes('class="agate"'));
-check("timed multi-day → ONE continuous lane Fri–Sun (grid-column:5/8), no 12a, plane once", (h.match(/Midway sleepover/g) || []).length === 1 && /grid-column:5\/8;grid-row:2"><span class="txt">Midway sleepover/.test(h) && !/12a<\/b> Midway/.test(h) && (h.match(/M8 19 l16 -7/g) || []).length === 1);
+check("timed multi-day → ONE continuous lane Fri–Sun with 12a start time, plane once", (h.match(/Midway sleepover/g) || []).length === 1 && /grid-column:5\/8;grid-row:2"><span class="txt"><b>12a<\/b> Midway sleepover/.test(h) && (h.match(/M8 19 l16 -7/g) || []).length === 1);
 check("overnight timed event (10p–2a) is one lane over two days", (h.match(/Late shift/g) || []).length === 1 && /grid-column:2\/4;grid-row:2"><span class="txt"><b>10p<\/b> Late shift/.test(h));
 check("Labor Day printed Sep 7 with star stamp", h.includes("Labor Day") && (h.match(/#st|star|hs/g) || []).length > 0 && h.includes('class="stamp hs"'));
 check("today overlay + TODAY tag on the 5th", (h.match(/class="dovl today"/g) || []).length === 1 && h.includes(">TODAY<"));
@@ -56,7 +56,7 @@ check("timed event bar: 4p popcorn", h.includes("<b>4p</b> Popcorn sales · Mari
 check("6:30p scouts", h.includes("<b>6:30p</b> 6:30 Cub Scouts"));
 check("birthday bar renders all-day in celebrations color", /class="ev ad"[^>]*--hl:#c76b8f[\s\S]{0,200}Sarah&#39;s Birthday/.test(h));
 check("anniversary → rings glyph present", h.includes("Wedding Anniversary") && h.includes('<circle cx="13" cy="17"'));
-check("spans: 3 continuous lanes; NO SCHOOL one element over Mon–Fri; bell once", (h.match(/class="lane lstart"/g) || []).length === 3 && (h.match(/>NO SCHOOL</g) || []).length === 1 && /grid-column:1\/6;grid-row:2"><span class="txt">NO SCHOOL/.test(h) && (h.match(/M16 9 c-4 0/g) || []).length === 1);
+check("spans: 3 continuous lanes with aligned start+end edges; NO SCHOOL over Mon–Fri; bell once", (h.match(/class="lane lstart lend"/g) || []).length === 3 && (h.match(/>NO SCHOOL</g) || []).length === 1 && /grid-column:1\/6;grid-row:2"><span class="txt">NO SCHOOL/.test(h) && (h.match(/M16 9 c-4 0/g) || []).length === 1);
 check("soccer → ball, dentist → cross", h.includes('cx="16" cy="16" r="7"') && h.includes('M16 11.5 v9'));
 check("overflow: and 2 more", h.includes("and 2 more, see inside"));
 check("rubber filter def present once", (h.match(/feTurbulence/g) || []).length === 1);

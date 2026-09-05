@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.6";
+const HCM_VERSION = "2026.9.7";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -116,7 +116,7 @@ class HomesteadMonthCard extends HTMLElement {
               const d = new Date(ev.start.dateTime);
               const endRaw = ev.end && ev.end.dateTime ? new Date(new Date(ev.end.dateTime).getTime() - 60000) : d; // a midnight end belongs to the prior day
               const sDay = ymd(d), eDay = ymd(endRaw < d ? d : endRaw);
-              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: d.getHours() === 0 && d.getMinutes() === 0 ? "" : fmtT(ev.start.dateTime) });
+              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: fmtT(ev.start.dateTime) });
               else (map[sDay] = map[sDay] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp });
             }
           }
@@ -179,7 +179,7 @@ class HomesteadMonthCard extends HTMLElement {
       // one continuous element per span per week, spanning its grid columns
       const laneBars = placed.map(({ sp, li }) => {
         const a = kk.indexOf(sp.s < w0 ? w0 : sp.s), b = kk.indexOf(sp.e > w6 ? w6 : sp.e);
-        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${2 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
+        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${2 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
       }).join("");
       let ovls = "", chs = "", cellevs = "";
       for (let j = 0; j < 7; j++) {
@@ -243,7 +243,8 @@ class HomesteadMonthCard extends HTMLElement {
   .out { opacity: .45; }
   .fade { opacity: .62; }
   .lane { margin: 0.14vmin 0; padding: 0.12vmin 0.3vw; display: flex; align-items: center; gap: 0.25vw; font-size: 1.45vmin; line-height: 1.25; font-weight: 700; letter-spacing: 0.04vw; background: color-mix(in srgb, var(--hl) 28%, transparent); min-width: 0; overflow: hidden; }
-  .lane.lstart { border-left: 0.22vw solid var(--hl); }
+  .lane.lstart { margin-left: 0.35vw; border-left: 0.22vw solid var(--hl); }
+  .lane.lend { margin-right: 0.35vw; }
   .lane .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .cellev { padding: 0.3vmin 0.35vw 0.4vmin; display: flex; flex-direction: column; gap: 0.28vmin; overflow: hidden; min-width: 0; min-height: 0; }
   .ch { display: flex; align-items: baseline; gap: 0.4vw; padding: 0.4vmin 0.35vw 0; min-width: 0; }
