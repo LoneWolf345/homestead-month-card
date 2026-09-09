@@ -51,13 +51,13 @@ views:
 | `week_start` | `monday` | `monday` or `sunday` |
 | `max_events`, `max_events_portrait` | `7`, `13` | Bars per cell before "and N more" (the portrait cap applies automatically when the screen is taller than wide) |
 | `height` | `100vh` | The page height (use `calc(100vh - 56px)` if you keep the HA header) |
-| `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` |
+| `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` `suitcase` |
 | `auto_return` | `300` | Seconds off-month before snapping back to today (0 = never) |
 | `footer` | house line | Bottom agate |
 
 ## Stamp rules (built in)
 
-birthday → `cake` · anniversary → `rings` · no school / breaks → `bell` · soccer / game / practice → `ball` · trip / vacation / camp → `plane` · doctor / dentist / appt → `cross` · printed holidays → `star`.
+birthday → `cake` · anniversary → `rings` · no school / breaks → `bell` · soccer / game / practice → `ball` · trip / vacation / camp / flight / arrive / depart → `plane` · visitor / guests / in town → `suitcase` (set `stamp: suitcase` on a Visitors calendar so plain stays get it too) · doctor / dentist / appt → `cross` · printed holidays → `star`.
 
 ## Wall hardware
 

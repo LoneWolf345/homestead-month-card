@@ -4,7 +4,7 @@
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
  * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.11";
+const HCM_VERSION = "2026.9.12";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -24,8 +24,9 @@ const DEFAULT_STAMPS = [
   { match: "anniversar", stamp: "rings" },
   { match: "no school|school closed|fall break|spring break|winter break|early release", stamp: "bell" },
   { match: "soccer|game|match|fan fest|practice", stamp: "ball" },
-  { match: "trip|vacation|travel|flight|midway|camp", stamp: "plane" },
+  { match: "trip|vacation|travel|flight|midway|camp|arriv|depart|land(s|ing)?\\b|takes? off|airport", stamp: "plane" },
   { match: "\\bdr\\b|doctor|dentist|ortho|appt|appointment|checkup", stamp: "cross" },
+  { match: "visitor|guests?\\b|staying with|in town", stamp: "suitcase" },
 ];
 const STAMP_GLYPHS = {
   cake: '<path d="M10 18 h12 v7 h-12 z M10 21 c2 2 4 -2 6 0 c2 2 4 -2 6 0 M13 18 v-3 M19 18 v-3 M13 12 v2 M19 12 v2" fill="none"/>',
@@ -35,6 +36,7 @@ const STAMP_GLYPHS = {
   plane: '<path d="M8 19 l16 -7 l-6 8 l-2 -2 l-3 4 l-0.5 -3.5 z" fill="none"/>',
   cross: '<circle cx="16" cy="16" r="7.5" fill="none"/><path d="M16 11.5 v9 M11.5 16 h9" fill="none"/>',
   star: '<path d="M16 9 l2.1 4.6 5 .5 -3.8 3.4 1.1 5 -4.4 -2.6 -4.4 2.6 1.1 -5 -3.8 -3.4 5 -.5 z" fill="none"/>',
+  suitcase: '<rect x="9" y="13" width="14" height="10" rx="1.5" fill="none"/><path d="M13 13 v-3 h6 v3 M9 17 h14 M12.5 17 v6 M19.5 17 v6" fill="none"/>',
 };
 
 class HomesteadMonthCard extends HTMLElement {
