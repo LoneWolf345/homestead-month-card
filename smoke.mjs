@@ -1,11 +1,11 @@
 // smoke.mjs — node harness for homestead-month-card
 import fs from "node:fs"; import vm from "node:vm";
 const src = fs.readFileSync(new URL("./homestead-month-card.js", import.meta.url), "utf8");
-class HTMLElement { constructor() { this._sr = null; this.style = {}; } attachShadow() { this._sr = { innerHTML: "" }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
+class HTMLElement { constructor() { this._sr = null; this.style = {}; } attachShadow() { this._sr = { innerHTML: "", addEventListener() {} }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
 const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
-const ctx = { HTMLElement, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent };
+const ctx = { HTMLElement, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, addEventListener() {}, removeEventListener() {} };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(src, ctx);
 const Card = defs["homestead-month-card"];
 let fails = 0;
@@ -74,4 +74,31 @@ check("footer carries the key hint", h3.includes("keys turn the month; HOME retu
 check("big cake stamp on the birthday cell", (h3.match(/class="bigstamp"/g) || []).length === 1 && h3.includes('class="stamp big"'));
 check("inline cake suppressed when big cake present", !/Sarah&#39;s Birthday<\/span><svg class="stamp"/.test(h3));
 check("sizes in vmin, page height stays 100vh", h3.includes("2.2vmin") && h3.includes("height: 100vh"));
-console.log(fails ? `\n${fails} FAILED` : "\nall passed"); process.exit(fails ? 1 : 0);
+console.log(fails ? `\n${fails} FAILED` : "\nall passed");
+// ---- tap: clippings, day lists, isolation ----
+{
+  const el2 = new Card(); el2.setConfig(cfg); el2.hass = hass; await tick(); await tick();
+  const h4 = el2.shadowRoot.innerHTML;
+  check("events and lanes carry data-ev/data-cal; headers and overflow carry data-day; chips carry data-cal", /class="ev[^"]*" data-ev="calendar\.henry\|[^"]+" data-cal="calendar\.henry"/.test(h4) && /class="lane[^"]*" data-ev="calendar\.family\|[^"]+" data-cal="calendar\.family"/.test(h4) && (h4.match(/class="ch[" ][^>]*data-day="2026-\d\d-\d\d"/g) || []).length === 35 && /class="more" data-day="2026-09-17"/.test(h4) && (h4.match(/class="chip" data-cal="calendar\./g) || []).length === 3);
+  const popcornId = Object.keys(el2._byId).find((k) => el2._byId[k].sum.startsWith("Popcorn"));
+  el2._openEvent(popcornId);
+  const p1 = el2._pop.html;
+  check("event clipping: kicker with calendar/date/time, headline, stamp", p1.includes("HENRY · Friday, September 11 · 4p – 6p".toUpperCase()) === false && /class="kick">Henry · Friday, September 11 · 4p – 6p</.test(p1) && p1.includes('class="ttl">Popcorn sales · Maricopa Fry&#39;s<') && p1.includes('class="clipstamp"') === false);
+  const midwayId = Object.keys(el2._byId).find((k) => /Midway/.test(el2._byId[k].sum));
+  el2._openEvent(midwayId);
+  const p2 = el2._pop.html;
+  check("span clipping: date range with nights and start time, plane stamp", /class="kick">Family · Sep 25 – Sep 27 · 2 nights · from 12a</.test(p2) && p2.includes('class="clipstamp"'));
+  el2._openDay("2026-09-17");
+  const p3 = el2._pop.html;
+  check("day clipping lists all 9 busy things with times", (p3.match(/class="row" data-ev=/g) || []).length === 9 && /class="kick">THURSDAY · SEPTEMBER 17 · 9 entries</.test(p3) && p3.includes("<b>") === false);
+  el2._openDay("2026-09-28");
+  check("day clipping includes spans covering the day (NO SCHOOL)", el2._pop.html.includes(">NO SCHOOL<") && el2._pop.html.includes(">all day<"));
+  el2._closePop();
+  check("close empties the clipping", el2._pop === null);
+  el2.connectedCallback(); el2._openEvent(popcornId); el2._key({ key: "Escape", target: { tagName: "DIV" } });
+  check("Escape closes the clipping first and leaves the month alone", el2._pop === null && el2._offset === 0);
+  el2._isolate("calendar.henry"); check("isolate toggles on", el2._iso === "calendar.henry");
+  el2._isolate("calendar.henry"); check("isolate toggles off", el2._iso === null);
+  check("tap can be disabled", (() => { const e3 = new Card(); e3.setConfig(Object.assign({ tap: false }, cfg)); return e3._cfg.tap === false; })());
+}
+console.log(fails ? `\n${fails} FAILED (tap)` : "\ntap checks passed"); process.exit(fails ? 1 : 0);

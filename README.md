@@ -12,6 +12,7 @@
 - **Rubber stamps** — small eroded-ink stamps (SVG turbulence, no images) beside matching events: 🎂 cake for birthdays, interlocked rings for anniversaries, a struck bell for NO SCHOOL, a soccer ball for games and practices, a plane for trips, a cross for appointments, and a star beside printed holidays.
 - **Holidays computed in-card** (US fixed and floating: Labor Day, Thanksgiving, and friends) printed in italics in the cell.
 - **Past days struck through in pencil** — the way she crosses them off — and **today boxed in ink** with a tilted TODAY stamp.
+- **Tap for the clipping.** Tap any event and a newspaper clipping pins itself over the grid: the calendar's name, the date and time (or the span and its nights), the full title, WHERE, the description as body copy, and the event's rubber stamp pressed in the corner. Tap a day number (or "and 3 more, see inside") for that day in full; tap a legend chip to fade every other calendar for a moment. Tap anywhere or press Esc to close; it fades on its own after `popup_seconds`.
 
 Read-only and data-dense; sizing is vmin-based, so **landscape and portrait both work** — portrait (like the paper calendar) gets taller cells and a higher event cap. Any day with a birthday takes a **big cake stamp** pressed across the cell. Refreshes every 15 minutes and rolls to the new month on its own. **Keyboard paging** for wall boxes without a touchscreen: `←`/`→` (also PgUp/PgDn or `p`/`n`) turn the month, `Home`/`Esc`/`t` return to the present — and after 5 idle minutes off-month it returns by itself (`auto_return` seconds, 0 disables).
 
@@ -53,6 +54,9 @@ views:
 | `height` | `100vh` | The page height (use `calc(100vh - 56px)` if you keep the HA header) |
 | `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` `suitcase` |
 | `auto_return` | `300` | Seconds off-month before snapping back to today (0 = never) |
+| `tap` | `true` | Tap events, day numbers and legend chips (set `false` for a strictly read-only wall) |
+| `popup_seconds` | `20` | How long a clipping stays up before fading on its own (0 = until tapped) |
+| `isolate_seconds` | `6` | How long a tapped legend chip keeps the other calendars faded |
 | `footer` | house line | Bottom agate |
 
 ## Stamp rules (built in)

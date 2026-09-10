@@ -3,8 +3,8 @@
  * (one color per calendar, like the household's paper calendar), day-of-year agates in
  * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
  * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
- * anniversaries, school closures and the rest. Data-dense by design; read-only. */
-const HCM_VERSION = "2026.9.12";
+- * anniversaries, school closures and the rest. Data-dense by design; tap an event for its clipping. */
+const HCM_VERSION = "2026.9.13";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -47,6 +47,7 @@ class HomesteadMonthCard extends HTMLElement {
     const c = Object.assign({
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
       max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300, week_start: "monday",
+      tap: true, popup_seconds: 20, isolate_seconds: 6,
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
@@ -69,11 +70,13 @@ class HomesteadMonthCard extends HTMLElement {
     this._key = (e) => {
       const tag = e.target && e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "Escape" && this._pop) { this._closePop(); return; }
       if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "n") this._nav(1);
       else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "p") this._nav(-1);
       else if (e.key === "Home" || e.key === "Escape" || e.key === "t") this._nav(0, true);
     };
     window.addEventListener("keydown", this._key);
+    if (!this._tapBound && this.shadowRoot) { this._tapBound = true; this.shadowRoot.addEventListener("click", (e) => this._onTap(e)); }
     if (typeof matchMedia === "function") { this._mq = matchMedia("(orientation: portrait)"); this._mqf = () => { this._sig = null; this._render(); }; try { this._mq.addEventListener("change", this._mqf); } catch (e) { /* older webview */ } }
   }
   disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); }
@@ -101,32 +104,39 @@ class HomesteadMonthCard extends HTMLElement {
     this._fetching = true;
     try {
       const { start, end } = this._range(disp);
-      const map = {}; const spans = [];
+      const map = {}; const spans = []; const byId = {};
       await Promise.all(this._cfg.calendars.map(async (cal) => {
         try {
           const evs = await this._hass.callApi("get", `calendars/${cal.entity}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
+          let n = 0;
           for (const ev of evs || []) {
             const sum = ev.summary || "";
             const stamp = this._stampFor(sum) || cal.stamp || "";
+            const id = `${cal.entity}|${ev.uid || n}`; n++;
+            // the full record, for the clipping that opens on tap
+            const rec = { id, cal: cal.entity, calName: cal.name, color: cal.color, stamp, sum, desc: ev.description || "", loc: ev.location || "", start: ev.start, end: ev.end, allDay: !!(ev.start && ev.start.date), s: "", e: "", t: "" };
             if (ev.start && ev.start.date) {
               const s = ev.start.date;
               const eDate = new Date(((ev.end && ev.end.date) || s) + "T00:00:00"); eDate.setDate(eDate.getDate() - 1); // end date is exclusive
               const eInc = ymd(eDate) < s ? s : ymd(eDate);
-              if (eInc > s) spans.push({ s, e: eInc, sum, color: cal.color, stamp });
-              else (map[s] = map[s] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp });
+              rec.s = s; rec.e = eInc;
+              if (eInc > s) spans.push({ s, e: eInc, sum, color: cal.color, stamp, id, cal: cal.entity });
+              else (map[s] = map[s] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp, id, cal: cal.entity });
             } else if (ev.start && ev.start.dateTime) {
               const d = new Date(ev.start.dateTime);
               const endRaw = ev.end && ev.end.dateTime ? new Date(new Date(ev.end.dateTime).getTime() - 60000) : d; // a midnight end belongs to the prior day
               const sDay = ymd(d), eDay = ymd(endRaw < d ? d : endRaw);
-              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: fmtT(ev.start.dateTime) });
-              else (map[sDay] = map[sDay] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp });
-            }
+              rec.s = sDay; rec.e = eDay; rec.t = fmtT(ev.start.dateTime);
+              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: fmtT(ev.start.dateTime), id, cal: cal.entity });
+              else (map[sDay] = map[sDay] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp, id, cal: cal.entity });
+            } else continue;
+            byId[id] = rec;
           }
         } catch (e) { /* calendar unavailable this pass */ }
       }));
       for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
       spans.sort((a, b) => (a.s < b.s ? -1 : 1));
-      this._events = map; this._spans = spans; this._fetchAt = Date.now(); this._fetchKey = key; this._sig = null; this._render();
+      this._events = map; this._spans = spans; this._byId = byId; this._fetchAt = Date.now(); this._fetchKey = key; this._sig = null; this._render();
     } finally { this._fetching = false; }
   }
   _stampFor(sum) { for (const r of this._rules) if (r.re.test(sum)) return r.stamp; return ""; }
@@ -159,6 +169,8 @@ class HomesteadMonthCard extends HTMLElement {
     if (out.sig === this._sig) return;
     this._sig = out.sig;
     this.shadowRoot.innerHTML = out.html;
+    this._paintPop();
+    if (this._iso) this._applyIso(); // re-apply after a repaint
   }
 
   _stampSvg(name, extra) {
@@ -191,7 +203,7 @@ class HomesteadMonthCard extends HTMLElement {
       // one continuous element per span per week, spanning its grid columns
       const laneBars = placed.map(({ sp, li }) => {
         const a = kk.indexOf(sp.s < w0 ? w0 : sp.s), b = kk.indexOf(sp.e > w6 ? w6 : sp.e);
-        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${4 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
+        return `<div class="lane${sp.s >= w0 ? " lstart" : ""}${sp.e <= w6 ? " lend" : ""}" data-ev="${esc(sp.id || "")}" data-cal="${esc(sp.cal || "")}" style="--hl:${esc(sp.color)};grid-column:${a + 1}/${b + 2};grid-row:${4 + li}"><span class="txt">${sp.t ? `<b>${esc(sp.t)}</b> ` : ""}${esc(sp.sum)}</span>${sp.stamp && sp.stamp !== "cake" ? this._stampSvg(sp.stamp) : ""}</div>`;
       }).join("");
       let ovls = "", chs = "", cellevs = "", adcells = "";
       for (let j = 0; j < 7; j++) {
@@ -202,17 +214,17 @@ class HomesteadMonthCard extends HTMLElement {
         const bday = evs.some((e) => e.stamp === "cake") || placed.some((p) => p.sp.stamp === "cake" && p.sp.s <= k && p.sp.e >= k);
         ovls += `<div class="dovl${isToday ? " today" : ""}" style="--j:${j}">${bday ? `<div class="bigstamp">${this._stampSvg("cake", "big")}</div>` : ""}${past ? this._strikeSvg(k) : ""}${isToday ? '<div class="td">TODAY</div>' : ""}</div>`;
         const fade = `${inMonth ? "" : " out"}${past ? " fade" : ""}`;
-        chs += `<div class="ch${fade}" style="grid-column:${j + 1};grid-row:1"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>`;
-        const bar = (e) => `<div class="ev${e.allDay ? " ad" : ""}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`;
+        chs += `<div class="ch${fade}" data-day="${k}" style="grid-column:${j + 1};grid-row:1"><span class="num">${d.getDate()}</span>${hol ? `<span class="hol">${this._stampSvg("star", "hs")}${esc(hol)}</span>` : ""}</div>`;
+        const bar = (e) => `<div class="ev${e.allDay ? " ad" : ""}" data-ev="${esc(e.id || "")}" data-cal="${esc(e.cal || "")}" style="--hl:${esc(e.color)}"><span class="txt">${e.t ? `<b>${esc(e.t)}</b> ` : ""}${esc(e.sum)}</span>${e.stamp && !(bday && e.stamp === "cake") ? this._stampSvg(e.stamp) : ""}</div>`;
         const adays = evs.filter((e) => e.allDay), timed = evs.filter((e) => !e.allDay);
         const shownTimed = timed.slice(0, Math.max(1, maxEv - adays.length)), extra = timed.length - shownTimed.length;
-        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:2">${shownTimed.map(bar).join("")}${extra > 0 ? `<div class="more">and ${extra} more, see inside</div>` : ""}</div>`;
+        cellevs += `<div class="cellev${fade}" style="grid-column:${j + 1};grid-row:2">${shownTimed.map(bar).join("")}${extra > 0 ? `<div class="more" data-day="${k}">and ${extra} more, see inside</div>` : ""}</div>`;
         adcells += `<div class="adcell${fade}" style="grid-column:${j + 1};grid-row:3">${adays.map(bar).join("")}</div>`;
       }
       weeks.push(`<div class="week"><div class="ovls">${ovls}</div><div class="wgrid" style="grid-template-rows:auto 1fr auto ${"auto ".repeat(maxLanes)}">${chs}${laneBars}${cellevs}${adcells}</div></div>`);
     }
     const cells = weeks;
-    const legend = c.calendars.map((x) => `<span class="chip" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
+    const legend = c.calendars.map((x) => `<span class="chip${this._iso === x.entity ? " on" : ""}" data-cal="${esc(x.entity)}" style="--hl:${esc(x.color)}">${esc(x.name)}</span>`).join("");
     const vol = `Vol. ${y - 2020}, No. ${mo + 1}`;
     const body = `
     <svg width="0" height="0" style="position:absolute"><defs><filter id="rub-${this._uid}" x="-20%" y="-20%" width="140%" height="140%">
@@ -226,7 +238,83 @@ class HomesteadMonthCard extends HTMLElement {
     <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
     <div class="weeks">${cells.join("")}</div>
     <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
-    return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}</div>` };
+    return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}<div class="popwrap" id="pop"></div></div>` };
+  }
+
+  // ---------- tap: clippings, day lists, and calendar isolation ----------
+  _onTap(e) {
+    if (!this._cfg.tap) return;
+    const path = e.composedPath ? e.composedPath() : [e.target];
+    const hit = (sel) => path.find((n) => n instanceof Element && n.matches && n.matches(sel));
+    const pop = this.shadowRoot.getElementById("pop");
+    const inPop = pop && path.includes(pop);
+    const evEl = hit("[data-ev]"), dayEl = hit("[data-day]"), calEl = hit(".chip[data-cal]");
+    if (evEl && evEl.dataset.ev && this._byId && this._byId[evEl.dataset.ev]) { this._openEvent(evEl.dataset.ev); return; }
+    if (!inPop && dayEl && dayEl.dataset.day) { this._openDay(dayEl.dataset.day); return; }
+    if (calEl) { this._isolate(calEl.dataset.cal); return; }
+    if (this._pop) this._closePop();
+  }
+  _fmtRange(rec) {
+    const dayName = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); };
+    const long = (k) => { const d = dayName(k); return `${DOW[d.getDay()].charAt(0) + DOW[d.getDay()].slice(1).toLowerCase()}, ${MONTHS[d.getMonth()].charAt(0) + MONTHS[d.getMonth()].slice(1).toLowerCase()} ${d.getDate()}`; };
+    const short = (k) => { const d = dayName(k); const mon = MONTHS[d.getMonth()]; return `${mon.charAt(0)}${mon.slice(1, 3).toLowerCase()} ${d.getDate()}`; };
+    if (rec.s !== rec.e) {
+      const nights = Math.round((dayName(rec.e) - dayName(rec.s)) / 86400000);
+      return { date: `${short(rec.s)} – ${short(rec.e)}`, time: `${nights} night${nights === 1 ? "" : "s"}${rec.t ? " · from " + rec.t : ""}` };
+    }
+    if (rec.allDay) return { date: long(rec.s), time: "All day" };
+    const endT = rec.end && rec.end.dateTime ? fmtT(rec.end.dateTime) : "";
+    return { date: long(rec.s), time: endT && endT !== rec.t ? `${rec.t} – ${endT}` : rec.t };
+  }
+  _openEvent(id) {
+    const r = this._byId && this._byId[id]; if (!r) return;
+    const { date, time } = this._fmtRange(r);
+    const body = r.desc ? esc(r.desc.trim()).replace(/\n/g, "<br>") : "";
+    this._pop = { html: `<div class="scrim"></div><div class="clip" style="--hl:${esc(r.color)}"><div class="tape"></div>
+      <div class="kick">${esc(r.calName)} · ${esc(date)} · ${esc(time)}</div>
+      <div class="ttl">${esc(r.sum)}</div>
+      ${r.loc ? `<div class="agate"><b>WHERE</b>${esc(r.loc)}</div>` : ""}
+      ${body ? `<div class="body">${body}</div>` : ""}
+      ${r.stamp ? `<div class="clipstamp">${this._stampSvg(r.stamp, "big")}</div>` : ""}
+    </div>` };
+    this._paintPop();
+  }
+  _openDay(k) {
+    const evs = ((this._events && this._events[k]) || []).slice();
+    const spans = (this._spans || []).filter((sp) => sp.s <= k && sp.e >= k);
+    const rows = [...spans.map((sp) => ({ id: sp.id, color: sp.color, when: sp.t || "all day", what: sp.sum, stamp: sp.stamp })),
+      ...evs.filter((e) => e.allDay).map((e) => ({ id: e.id, color: e.color, when: "all day", what: e.sum, stamp: e.stamp })),
+      ...evs.filter((e) => !e.allDay).map((e) => ({ id: e.id, color: e.color, when: e.t, what: e.sum, stamp: e.stamp }))];
+    const [y, m, d] = k.split("-").map(Number); const dt = new Date(y, m - 1, d);
+    const hol = this._cfg.show_holidays ? this._holidays(y)[`${pad2(m)}-${pad2(d)}`] : "";
+    const list = rows.length ? rows.map((r) => `<div class="row" data-ev="${esc(r.id || "")}" style="--hl:${esc(r.color)}"><span class="when">${esc(r.when)}</span><span class="what">${esc(r.what)}</span>${r.stamp ? this._stampSvg(r.stamp) : ""}</div>`).join("") : `<div class="agate">Nothing on the books. A quiet day, or an unrecorded one.</div>`;
+    this._pop = { html: `<div class="scrim"></div><div class="clip day" style="--hl:${INK}"><div class="tape"></div>
+      <div class="kick">${DOW[dt.getDay()]} · ${MONTHS[m - 1]} ${d} · ${rows.length} ${rows.length === 1 ? "entry" : "entries"}${hol ? " · " + esc(hol).toUpperCase() : ""}</div>
+      <div class="ttl">The day, in full</div>
+      <div class="list">${list}</div>
+    </div>` };
+    this._paintPop();
+  }
+  _closePop() { this._pop = null; clearTimeout(this._popT); this._paintPop(); }
+  _paintPop() {
+    const sr = this.shadowRoot;
+    const pop = sr && typeof sr.getElementById === "function" ? sr.getElementById("pop") : null;
+    if (pop) pop.innerHTML = this._pop ? this._pop.html : "";
+    clearTimeout(this._popT);
+    if (this._pop && this._cfg.popup_seconds > 0) this._popT = setTimeout(() => this._closePop(), this._cfg.popup_seconds * 1000);
+  }
+  _applyIso() {
+    const sr = this.shadowRoot; if (!sr || typeof sr.querySelectorAll !== "function") return;
+    sr.querySelectorAll("[data-cal]").forEach((el) => {
+      if (el.classList.contains("chip")) el.classList.toggle("on", !!this._iso && el.dataset.cal === this._iso);
+      else el.classList.toggle("dim", !!this._iso && el.dataset.cal !== this._iso);
+    });
+  }
+  _isolate(cal) {
+    clearTimeout(this._isoT);
+    this._iso = cal && this._iso !== cal ? cal : null;
+    this._applyIso();
+    if (this._iso && this._cfg.isolate_seconds > 0) this._isoT = setTimeout(() => this._isolate(null), this._cfg.isolate_seconds * 1000);
   }
 
   _css() {
@@ -278,7 +366,29 @@ class HomesteadMonthCard extends HTMLElement {
   .xs { position: absolute; inset: 1% 3%; width: 94%; height: 98%; pointer-events: none; stroke: ${GRAPHITE}; fill: none; stroke-linecap: round; }
   .xs path { vector-effect: non-scaling-stroke; }
   .td { position: absolute; right: 0.3vw; bottom: 0.3vmin; font-size: 1vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.1vmin 0.35vw; transform: rotate(-3deg); opacity: .85; }
-  .foot { text-align: center; font-size: 1.1vmin; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vmin 0 0.3vmin; }`;
+  .foot { text-align: center; font-size: 1.1vmin; color: ${TAN}; letter-spacing: 0.08vw; padding: 0.5vmin 0 0.3vmin; }
+  /* tap: clippings pinned over the grid */
+  .page { position: relative; }
+  .ev, .lane, .ch, .more, .chip, .clip .row { cursor: pointer; }
+  .dim { opacity: .12 !important; transition: opacity .35s; }
+  .chip.on { outline: 2px solid var(--hl); outline-offset: 1px; }
+  .popwrap:empty { display: none; }
+  .scrim { position: absolute; inset: 0; background: rgba(58,45,31,.16); z-index: 5; }
+  .clip { position: absolute; left: 50%; top: 50%; width: min(66vmin, 92vw); max-height: 82vh; overflow: hidden; transform: translate(-50%, -50%) rotate(-1.4deg);
+    background: #f6efdc; color: ${INK}; border: 1.5px solid ${INK}; border-left: 1.1vmin solid var(--hl); box-shadow: 0 1.5vmin 4vmin rgba(58,45,31,.38), 0 0 0 3px #f6efdc; padding: 2.8vmin 2.8vmin 2.4vmin 2.6vmin; z-index: 6; }
+  .clip.day { border-left-color: ${INK}; }
+  .tape { position: absolute; top: -1.3vmin; left: 50%; width: 10vmin; height: 2.6vmin; background: rgba(163,135,106,.42); transform: translateX(-50%) rotate(-3deg); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+  .kick { font-size: 1.35vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${TAN}; text-transform: uppercase; padding-right: 8vmin; }
+  .ttl { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 3.4vmin; line-height: 1.1; margin: 0.8vmin 0 1.2vmin; text-wrap: balance; padding-right: 6vmin; }
+  .agate { font-size: 1.65vmin; color: ${BROWN}; margin-top: 0.6vmin; line-height: 1.35; }
+  .agate b { font-weight: 700; letter-spacing: 0.2vw; font-size: 1.15vmin; color: ${TAN}; margin-right: 0.6vw; }
+  .body { font-family: Fraunces, Georgia, serif; font-size: 1.85vmin; line-height: 1.42; margin-top: 1.1vmin; max-height: 38vh; overflow: hidden; padding-right: 5vmin; }
+  .clipstamp { position: absolute; right: 1.2vmin; bottom: 0.9vmin; width: 12vmin; height: 12vmin; opacity: .35; pointer-events: none; }
+  .clipstamp .stamp { width: 100%; height: 100%; transform: rotate(-12deg); }
+  .list { margin-top: 0.4vmin; max-height: 60vh; overflow: hidden; }
+  .clip .row { display: flex; align-items: center; gap: 0.6vw; padding: 0.55vmin 0.6vw; margin: 0.4vmin 0; background: color-mix(in srgb, var(--hl) 26%, transparent); border-left: 0.3vw solid var(--hl); font-size: 1.8vmin; }
+  .clip .row .when { font-weight: 700; flex: none; min-width: 7.5vmin; color: #241c12; }
+  .clip .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }`;
   }
 }
 
