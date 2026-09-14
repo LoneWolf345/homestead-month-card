@@ -1,10 +1,10 @@
 /* homestead-month-card — The Homestead Times Calendar: a full-screen newsprint month grid
  * for a wall display. Events from any number of HA calendars drawn as highlighter bars
- * (one color per calendar, like the household's paper calendar), day-of-year agates in
- * every cell, computed US holidays, pencil-struck past days, a boxed TODAY, and rubber
- * stamps (cake, rings, bell, ball, plane, cross, star) inked beside birthdays,
- * anniversaries, school closures and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.13";
+ * (one color per calendar, like the household's paper calendar), computed US holidays,
+ * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
+ * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
+ * and the rest. Data-dense by design; tap an event for its clipping. */
+const HCM_VERSION = "2026.9.14";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -13,8 +13,12 @@ const DOW = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad2 = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const leap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-const doy = (d) => { const s = new Date(d.getFullYear(), 0, 0); return Math.round((d - s) / 86400000); };
+// everything the grid prints from a fetch, as one string: the render signature compares this rather
+// than the fetch timestamp, so a refresh that changes nothing leaves the DOM (and an open clipping) alone
+const evKey = (map, spans) => JSON.stringify([
+  Object.keys(map).sort().map((k) => [k, map[k].map((e) => [e.id, e.t, e.sum, e.color, e.stamp, e.allDay])]),
+  spans.map((sp) => [sp.id, sp.s, sp.e, sp.t || "", sp.sum, sp.color, sp.stamp]),
+]);
 const fmtT = (dt) => { const d = new Date(dt); let h = d.getHours(); const m = d.getMinutes(), ap = h >= 12 ? "p" : "a"; h = h % 12 || 12; return h + (m ? ":" + pad2(m) : "") + ap; };
 const nth = (y, mo, dow, n) => { const first = new Date(y, mo, 1); let d = 1 + ((dow - first.getDay() + 7) % 7) + (n - 1) * 7; return `${pad2(mo + 1)}-${pad2(d)}`; };
 const lastDow = (y, mo, dow) => { const last = new Date(y, mo + 1, 0); const d = last.getDate() - ((last.getDay() - dow + 7) % 7); return `${pad2(mo + 1)}-${pad2(d)}`; };
@@ -52,9 +56,13 @@ class HomesteadMonthCard extends HTMLElement {
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
     this._cfg = c;
-    this._rules = [...(c.stamps || []).map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp })), ...DEFAULT_STAMPS.map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp }))];
+    // a user's typo in a stamp rule must surface as a config error that names the rule, not a raw SyntaxError
+    const compile = (s, i) => { try { return new RegExp(s.match, "i"); } catch (e) { throw new Error(`homestead-month-card: stamps[${i}] (stamp "${s.stamp}") has an invalid match pattern ${JSON.stringify(s.match)}: ${e.message}`); } };
+    this._rules = [...(c.stamps || []).map((s, i) => ({ re: compile(s, i), stamp: s.stamp })), ...DEFAULT_STAMPS.map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp }))];
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    this._sig = null; this._events = null; this._spans = null; this._fetchAt = 0; this._fetchKey = ""; this._offset = 0;
+    this._sig = null; this._events = null; this._spans = null; this._fetchAt = 0; this._fetchKey = ""; this._evKey = ""; this._offset = 0;
+    // a new config retires any fetch still in flight: its result is checked against this number after the await
+    this._fetchSeq = (this._fetchSeq || 0) + 1; this._fetching = false;
     if (this._fontsReady === undefined) {
       const fonts = typeof document !== "undefined" && document.fonts;
       this._fontsReady = !fonts;
@@ -79,7 +87,7 @@ class HomesteadMonthCard extends HTMLElement {
     if (!this._tapBound && this.shadowRoot) { this._tapBound = true; this.shadowRoot.addEventListener("click", (e) => this._onTap(e)); }
     if (typeof matchMedia === "function") { this._mq = matchMedia("(orientation: portrait)"); this._mqf = () => { this._sig = null; this._render(); }; try { this._mq.addEventListener("change", this._mqf); } catch (e) { /* older webview */ } }
   }
-  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); }
+  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); clearTimeout(this._popT); clearTimeout(this._isoT); }
   _dispDate() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + this._offset, 1); }
   _nav(delta, home) {
     this._offset = home ? 0 : this._offset + delta;
@@ -102,6 +110,7 @@ class HomesteadMonthCard extends HTMLElement {
     const disp = this._dispDate(), key = `${disp.getFullYear()}-${disp.getMonth()}`;
     if (this._fetching || (Date.now() - this._fetchAt < 15 * 60000 && this._fetchKey === key)) return;
     this._fetching = true;
+    const seq = this._fetchSeq;
     try {
       const { start, end } = this._range(disp);
       const map = {}; const spans = []; const byId = {};
@@ -134,10 +143,13 @@ class HomesteadMonthCard extends HTMLElement {
           }
         } catch (e) { /* calendar unavailable this pass */ }
       }));
+      if (seq !== this._fetchSeq) return;
       for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
       spans.sort((a, b) => (a.s < b.s ? -1 : 1));
-      this._events = map; this._spans = spans; this._byId = byId; this._fetchAt = Date.now(); this._fetchKey = key; this._sig = null; this._render();
-    } finally { this._fetching = false; }
+      this._events = map; this._spans = spans; this._byId = byId; this._fetchAt = Date.now(); this._fetchKey = key;
+      // no _sig reset here: the signature carries the event key, so an unchanged month is left as it stands
+      this._evKey = evKey(map, spans); this._render();
+    } finally { if (seq === this._fetchSeq) this._fetching = false; }
   }
   _stampFor(sum) { for (const r of this._rules) if (r.re.test(sum)) return r.stamp; return ""; }
   // a hand-drawn pencil X, seeded by the date so each day's cross-off is its own but stays put
@@ -238,7 +250,7 @@ class HomesteadMonthCard extends HTMLElement {
     <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
     <div class="weeks">${cells.join("")}</div>
     <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
-    return { sig: today + "|" + this._offset + "|" + JSON.stringify(this._events ? Object.keys(this._events).length : -1) + "|" + this._fetchAt + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}<div class="popwrap" id="pop"></div></div>` };
+    return { sig: today + "|" + this._offset + "|" + this._evKey + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}<div class="popwrap" id="pop"></div></div>` };
   }
 
   // ---------- tap: clippings, day lists, and calendar isolation ----------
@@ -392,13 +404,14 @@ class HomesteadMonthCard extends HTMLElement {
   }
 }
 
-if (!document.getElementById("hcm-font")) {
+// One font sheet for every Homestead Times card: the first card to load injects it, the rest find it.
+if (!document.getElementById("homestead-times-font")) {
   const l = document.createElement("link");
-  l.id = "hcm-font"; l.rel = "stylesheet";
-  l.href = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,400&family=Archivo:wght@400;600;700&display=swap";
+  l.id = "homestead-times-font"; l.rel = "stylesheet";
+  l.href = "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400&family=Archivo:wght@400;500;600;700&display=swap";
   document.head.appendChild(l);
 }
 customElements.define("homestead-month-card", HomesteadMonthCard);
 console.info(`%c HOMESTEAD-MONTH-CARD %c ${HCM_VERSION} `, "background:#3a2d1f;color:#f3e7d3;font-weight:700", "background:#b03a26;color:#fff;font-weight:700");
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "homestead-month-card", name: "Homestead Month Card", description: "A full-screen newsprint month calendar for wall displays: highlighter bars per calendar, day-of-year agates, holidays, struck past days and rubber-stamp icons.", preview: true, documentationURL: "https://github.com/LoneWolf345/homestead-month-card" });
+window.customCards.push({ type: "homestead-month-card", name: "Homestead Month Card", description: "A full-screen newsprint month calendar for wall displays: highlighter bars per calendar, holidays, struck past days, rubber-stamp icons and tap-for-clipping.", preview: true, documentationURL: "https://github.com/LoneWolf345/homestead-month-card" });

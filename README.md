@@ -2,7 +2,7 @@
 
 **The Homestead Times Calendar** — a full-screen newsprint month grid for a wall display, modeled on the household's paper calendar. Companion to the [Almanac Weather Card](https://github.com/LoneWolf345/almanac-weather-card) and the rest of the Homestead Times cards.
 
-<img src="docs/calendar.png" width="800" alt="A newsprint month grid: masthead, highlighter event bars per calendar, day-of-year agates, rubber stamps on birthdays and holidays, struck-out past days">
+<img src="docs/calendar.png" width="800" alt="A newsprint month grid: masthead, highlighter event bars per calendar, rubber stamps on birthdays and holidays, struck-out past days">
 
 **What it prints**
 

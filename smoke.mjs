@@ -1,7 +1,8 @@
 // smoke.mjs — node harness for homestead-month-card
 import fs from "node:fs"; import vm from "node:vm";
 const src = fs.readFileSync(new URL("./homestead-month-card.js", import.meta.url), "utf8");
-class HTMLElement { constructor() { this._sr = null; this.style = {}; } attachShadow() { this._sr = { innerHTML: "", addEventListener() {} }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
+// the shadow root counts innerHTML assignments (`_sets`) so the render-dedupe checks can see a swap that should not happen
+class HTMLElement { constructor() { this._sr = null; this.style = {}; this._sets = 0; } attachShadow() { const self = this; let html = ""; this._sr = { get innerHTML() { return html; }, set innerHTML(v) { html = v; self._sets++; }, addEventListener() {} }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
 const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
@@ -101,4 +102,58 @@ console.log(fails ? `\n${fails} FAILED` : "\nall passed");
   el2._isolate("calendar.henry"); check("isolate toggles off", el2._iso === null);
   check("tap can be disabled", (() => { const e3 = new Card(); e3.setConfig(Object.assign({ tap: false }, cfg)); return e3._cfg.tap === false; })());
 }
-console.log(fails ? `\n${fails} FAILED (tap)` : "\ntap checks passed"); process.exit(fails ? 1 : 0);
+console.log(fails ? `\n${fails} FAILED (tap)` : "\ntap checks passed");
+// ---- hostile strings, a failing calendar, render dedupe, unchanged fetch, stamp regex, teardown, a config change mid-fetch ----
+{
+  const hostile = "<img src=x onerror=alert(1)>";
+  const hass2 = { states: {}, callApi: async () => [{ summary: hostile, description: hostile + "\nline two", location: hostile, start: { dateTime: "2026-09-12T10:00:00-07:00" }, end: { dateTime: "2026-09-12T11:00:00-07:00" } }] };
+  const e = new Card(); e.setConfig(cfg); e.hass = hass2; await tick(); await tick();
+  const g = e.shadowRoot.innerHTML;
+  check("hostile summary prints escaped in the grid, never raw", g.includes("&lt;img src=x onerror=alert(1)&gt;") && !g.includes("<img src=x"));
+  e._openEvent(Object.keys(e._byId)[0]);
+  const p = e._pop.html;
+  check("hostile summary/location/description print escaped in the clipping, never raw", (p.match(/&lt;img src=x onerror=alert\(1\)&gt;/g) || []).length === 3 && p.includes("line two") && !p.includes("<img src=x"));
+}
+{
+  const e = new Card(); e.setConfig(cfg); let threw = false;
+  try { e.hass = { states: {}, callApi: async () => { throw new Error("calendar unavailable"); } }; await tick(); await tick(); } catch (x) { threw = true; }
+  const g = e.shadowRoot.innerHTML;
+  check("every calendar failing: the grid still prints, no error shell, no NaN/undefined", !threw && g.includes("SEPTEMBER 2026") && (g.match(/class="ch[" ]/g) || []).length === 35 && !g.includes("color:#b00") && !/NaN|undefined/.test(g));
+}
+{
+  const e = new Card(); e.setConfig(cfg); const hass3 = { states: {} };
+  e.hass = hass3; e.hass = hass3; await tick();
+  check("render dedupe: the same hass twice → exactly one innerHTML assignment", e._sets === 1 && e.shadowRoot.innerHTML.includes("SEPTEMBER 2026"));
+}
+{
+  const evs = [{ summary: "Soccer practice", start: { dateTime: "2026-09-10T16:00:00-07:00" }, end: { dateTime: "2026-09-10T17:00:00-07:00" } }];
+  const hass4 = { states: {}, callApi: async () => evs };
+  const e = new Card(); e.setConfig(cfg); e.hass = hass4; await tick(); await tick();
+  const before = e._sets;
+  e._fetchAt = 0; e.hass = hass4; await tick(); await tick();
+  check("a refetch that changes nothing does not swap the DOM", e._fetchAt > 0 && e._sets === before);
+  e._openEvent(Object.keys(e._byId)[0]); const popBefore = e._pop && e._pop.html;
+  e._fetchAt = 0; e.hass = hass4; await tick(); await tick();
+  check("…and leaves an open clipping in place", e._sets === before && e._pop && e._pop.html === popBefore);
+  evs.push({ summary: "Dentist", start: { dateTime: "2026-09-15T09:00:00-07:00" }, end: { dateTime: "2026-09-15T10:00:00-07:00" } });
+  e._fetchAt = 0; e.hass = hass4; await tick(); await tick();
+  check("a refetch with a new event does swap the DOM", e._sets === before + 1 && e.shadowRoot.innerHTML.includes("Dentist"));
+}
+check("invalid stamps regex throws a config error naming the rule", (() => { try { new Card().setConfig(Object.assign({}, cfg, { stamps: [{ match: "birthday|(", stamp: "star" }] })); return false; } catch (x) { return /homestead-month-card: stamps\[0\] \(stamp "star"\) has an invalid match pattern "birthday\|\("/.test(x.message); } })());
+{
+  const cleared = []; const realClear = ctx.clearTimeout; ctx.clearTimeout = (t) => { cleared.push(t); return realClear(t); };
+  const e = new Card(); e.setConfig(cfg); e.connectedCallback();
+  e._popT = setTimeout(() => {}, 60000); e._isoT = setTimeout(() => {}, 60000);
+  e.disconnectedCallback(); ctx.clearTimeout = realClear;
+  check("disconnectedCallback clears the clipping and isolation timers", cleared.includes(e._popT) && cleared.includes(e._isoT));
+}
+{
+  let resolve; const pending = new Promise((r) => { resolve = r; });
+  const e = new Card(); e.setConfig(cfg); e.hass = { states: {}, callApi: () => pending };
+  e.setConfig({ calendars: [{ entity: "calendar.other", name: "Other", color: "#123456" }] });
+  resolve([{ summary: "Stale event", start: { date: "2026-09-12" }, end: { date: "2026-09-13" } }]); await tick(); await tick();
+  check("setConfig mid-fetch: the stale calendar result is discarded", e._events === null && e._fetchAt === 0 && !e.shadowRoot.innerHTML.includes("Stale event"));
+  e.hass = { states: {}, callApi: async () => [{ summary: "Fresh event", start: { date: "2026-09-12" }, end: { date: "2026-09-13" } }] }; await tick(); await tick();
+  check("…and the next hass fetches afresh for the new config", e._fetchAt > 0 && e.shadowRoot.innerHTML.includes("Fresh event"));
+}
+console.log(fails ? `\n${fails} FAILED` : "\nall passed"); process.exit(fails ? 1 : 0);
