@@ -4,7 +4,7 @@
  * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
  * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
  * and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.14";
+const HCM_VERSION = "2026.9.15";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -51,7 +51,7 @@ class HomesteadMonthCard extends HTMLElement {
     const c = Object.assign({
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
       max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300, week_start: "monday",
-      tap: true, popup_seconds: 20, isolate_seconds: 6,
+      tap: true, popup_seconds: 20, isolate_seconds: 6, navigation: true,
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
@@ -74,17 +74,25 @@ class HomesteadMonthCard extends HTMLElement {
   getCardSize() { return 20; }
   connectedCallback() {
     this._tick = setInterval(() => { this._maybeFetch(); this._render(); }, 60000);
-    // keyboard month paging for wall displays without a touchscreen
+    // keyboard month paging for wall boxes with a keyboard: arrows / PgUp PgDn / p n turn the month,
+    // Shift+arrows turn a year, Home / t / Esc return to the present (Esc closes a clipping first)
     this._key = (e) => {
       const tag = e.target && e.target.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "Escape" && this._pop) { this._closePop(); return; }
-      if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "n") this._nav(1);
-      else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "p") this._nav(-1);
-      else if (e.key === "Home" || e.key === "Escape" || e.key === "t") this._nav(0, true);
+      const step = e.shiftKey ? 12 : 1;
+      if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "n" || e.key === "N" || e.key === ".") this._nav(step);
+      else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "p" || e.key === "P" || e.key === ",") this._nav(-step);
+      else if (e.key === "Home" || e.key === "Escape" || e.key === "t" || e.key === "T") this._nav(0, true);
     };
     window.addEventListener("keydown", this._key);
-    if (!this._tapBound && this.shadowRoot) { this._tapBound = true; this.shadowRoot.addEventListener("click", (e) => this._onTap(e)); }
+    if (!this._tapBound && this.shadowRoot) {
+      this._tapBound = true;
+      this.shadowRoot.addEventListener("click", (e) => this._onTap(e));
+      // a swipe across the grid turns the month on the wall tablet, where there is no keyboard
+      this.shadowRoot.addEventListener("touchstart", (e) => this._swipeStart(e), { passive: true });
+      this.shadowRoot.addEventListener("touchend", (e) => this._swipeEnd(e), { passive: true });
+    }
     if (typeof matchMedia === "function") { this._mq = matchMedia("(orientation: portrait)"); this._mqf = () => { this._sig = null; this._render(); }; try { this._mq.addEventListener("change", this._mqf); } catch (e) { /* older webview */ } }
   }
   disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); clearTimeout(this._popT); clearTimeout(this._isoT); }
@@ -93,7 +101,18 @@ class HomesteadMonthCard extends HTMLElement {
     this._offset = home ? 0 : this._offset + delta;
     clearTimeout(this._ret);
     if (this._offset !== 0 && this._cfg.auto_return > 0) this._ret = setTimeout(() => this._nav(0, true), this._cfg.auto_return * 1000);
+    if (this._pop) { this._pop = null; clearTimeout(this._popT); }
     this._sig = null; this._maybeFetch(); this._render();
+  }
+  // a horizontal swipe (mostly sideways, at least 60px) turns the month: left = forward, right = back
+  _swipeStart(e) { const t = e.touches && e.touches[0]; this._sw = t ? { x: t.clientX, y: t.clientY, at: Date.now() } : null; }
+  _swipeEnd(e) {
+    const s = this._sw; this._sw = null;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!s || !t || !this._cfg.navigation) return;
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - s.at > 1200) return;
+    this._nav(dx < 0 ? 1 : -1);
   }
 
   _ws() { return this._cfg.week_start === "sunday" ? 0 : 1; }
@@ -245,19 +264,22 @@ class HomesteadMonthCard extends HTMLElement {
       <feComposite in="SourceGraphic" in2="a" operator="in"/></filter></defs></svg>
     <div class="mast">
       <div class="mrow1"><span class="mvol">${esc(vol)} · ${esc(c.subtitle)}</span><span class="mname">${esc(c.title)}</span><span class="mleg">${legend}</span></div>
-      <div class="mrow2"><span class="rule"></span><span class="month">${MONTHS[mo]} ${y}</span>${this._offset !== 0 ? '<span class="ret">HOME RETURNS TO THE PRESENT</span>' : ""}<span class="rule"></span></div>
+      <div class="mrow2"><span class="rule"></span>${c.navigation ? '<button class="nav" data-nav="-1" aria-label="Previous month" title="Previous month (←)">‹ PREV</button>' : ""}<span class="month">${MONTHS[mo]} ${y}</span>${c.navigation ? '<button class="nav" data-nav="1" aria-label="Next month" title="Next month (→)">NEXT ›</button>' : ""}${this._offset !== 0 ? '<button class="ret" data-nav="0" aria-label="Return to the present" title="Return to today (Home)">RETURN TO THE PRESENT</button>' : ""}<span class="rule"></span></div>
     </div>
     <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
     <div class="weeks">${cells.join("")}</div>
-    <div class="foot">${esc(c.footer)} · ‹ › keys turn the month; HOME returns.</div>`;
+    <div class="foot">${esc(c.footer)} · ${c.navigation ? "Swipe or tap PREV / NEXT to turn the month · " : ""}Keys: ← → (PgUp PgDn, p n) turn the month, Shift+← → a year, Home or t returns.</div>`;
     return { sig: today + "|" + this._offset + "|" + this._evKey + "|" + this._fontsReady, html: `<style>${this._css()}</style><div class="page">${body}<div class="popwrap" id="pop"></div></div>` };
   }
 
   // ---------- tap: clippings, day lists, and calendar isolation ----------
   _onTap(e) {
-    if (!this._cfg.tap) return;
     const path = e.composedPath ? e.composedPath() : [e.target];
     const hit = (sel) => path.find((n) => n instanceof Element && n.matches && n.matches(sel));
+    // the month controls work even on a strictly read-only wall (tap: false): turning the page edits nothing
+    const navEl = hit("[data-nav]");
+    if (navEl) { const d = parseInt(navEl.dataset.nav, 10); this._nav(d === 0 ? 0 : d, d === 0); return; }
+    if (!this._cfg.tap) return;
     const pop = this.shadowRoot.getElementById("pop");
     const inPop = pop && path.includes(pop);
     const evEl = hit("[data-ev]"), dayEl = hit("[data-day]"), calEl = hit(".chip[data-cal]");
@@ -343,8 +365,11 @@ class HomesteadMonthCard extends HTMLElement {
   .chip { font-size: 1.15vmin; font-weight: 700; letter-spacing: 0.08vw; padding: 0.25vmin 0.5vw; background: color-mix(in srgb, var(--hl) 30%, transparent); border-left: 0.25vw solid var(--hl); }
   .mrow2 { display: flex; align-items: center; gap: 1vw; margin-top: 0.3vmin; }
   .mrow2 .rule { flex: 1; border-top: 1px solid ${INK}; }
-  .month { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.5vmin; letter-spacing: 0.35vw; }
-  .ret { font-size: 1.1vmin; font-weight: 700; letter-spacing: 0.2vw; color: ${TERRA}; border: 1.5px solid ${TERRA}; padding: 0.2vmin 0.5vw; transform: rotate(-2deg); white-space: nowrap; }
+  .month { font-family: Fraunces, Georgia, serif; font-weight: 900; font-size: 2.5vmin; letter-spacing: 0.35vw; min-width: 24vmin; text-align: center; }
+  /* the month controls: set like a running head, sized for a finger on the wall tablet */
+  .nav, .ret { font-family: Archivo, 'Segoe UI', sans-serif; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${BROWN}; background: transparent; border: 1.5px solid ${BROWN}; border-radius: 0; padding: 0 1.2vw; min-height: 4.2vmin; min-width: 11vmin; cursor: pointer; white-space: nowrap; user-select: none; -webkit-tap-highlight-color: transparent; }
+  .nav:active, .ret:active { background: color-mix(in srgb, ${BROWN} 18%, transparent); }
+  .ret { color: ${TERRA}; border-color: ${TERRA}; transform: rotate(-2deg); margin-left: 0.6vw; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1.5px solid ${INK}; }
   .dow div { text-align: center; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vmin 0 0.4vmin; }
   .weeks { flex: 1; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid ${DOT}; border-right: 1px solid ${DOT}; }

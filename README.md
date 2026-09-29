@@ -14,7 +14,9 @@
 - **Past days struck through in pencil** — the way she crosses them off — and **today boxed in ink** with a tilted TODAY stamp.
 - **Tap for the clipping.** Tap any event and a newspaper clipping pins itself over the grid: the calendar's name, the date and time (or the span and its nights), the full title, WHERE, the description as body copy, and the event's rubber stamp pressed in the corner. Tap a day number (or "and 3 more, see inside") for that day in full; tap a legend chip to fade every other calendar for a moment. Tap anywhere or press Esc to close; it fades on its own after `popup_seconds`.
 
-Read-only and data-dense; sizing is vmin-based, so **landscape and portrait both work** — portrait (like the paper calendar) gets taller cells and a higher event cap. Any day with a birthday takes a **big cake stamp** pressed across the cell. Refreshes every 15 minutes and rolls to the new month on its own. **Keyboard paging** for wall boxes without a touchscreen: `←`/`→` (also PgUp/PgDn or `p`/`n`) turn the month, `Home`/`Esc`/`t` return to the present — and after 5 idle minutes off-month it returns by itself (`auto_return` seconds, 0 disables).
+Read-only and data-dense; sizing is vmin-based, so **landscape and portrait both work** — portrait (like the paper calendar) gets taller cells and a higher event cap. Any day with a birthday takes a **big cake stamp** pressed across the cell. Refreshes every 15 minutes and rolls to the new month on its own.
+
+**Turning the page.** On the wall tablet, **swipe left or right** across the grid, or tap **‹ PREV** / **NEXT ›** beside the month name; off-month, a tilted **RETURN TO THE PRESENT** button appears. With a keyboard: `←`/`→` (also PgUp/PgDn, `p`/`n`, `,`/`.`) turn the month, `Shift+←`/`Shift+→` turn a whole year, `Home`/`t`/`Esc` return to the present (Esc closes an open clipping first). After 5 idle minutes off-month it returns by itself (`auto_return` seconds, 0 disables). The buttons and swipe work even with `tap: false`; `navigation: false` removes them (keys stay).
 
 ## Installation (HACS)
 
@@ -54,6 +56,7 @@ views:
 | `height` | `100vh` | The page height (use `calc(100vh - 56px)` if you keep the HA header) |
 | `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` `suitcase` |
 | `auto_return` | `300` | Seconds off-month before snapping back to today (0 = never) |
+| `navigation` | `true` | PREV / NEXT / RETURN buttons in the masthead and swipe-to-turn on touch screens (keys always work) |
 | `tap` | `true` | Tap events, day numbers and legend chips (set `false` for a strictly read-only wall) |
 | `popup_seconds` | `20` | How long a clipping stays up before fading on its own (0 = until tapped) |
 | `isolate_seconds` | `6` | How long a tapped legend chip keeps the other calendars faded |

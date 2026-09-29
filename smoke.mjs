@@ -6,7 +6,9 @@ class HTMLElement { constructor() { this._sr = null; this.style = {}; this._sets
 const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
-const ctx = { HTMLElement, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, addEventListener() {}, removeEventListener() {} };
+// a stand-in for DOM elements on a tap path: `matches` understands the four selectors the card uses
+class Element { constructor(ds, chip) { this.dataset = ds || {}; this._chip = !!chip; } matches(sel) { if (sel === "[data-nav]") return "nav" in this.dataset; if (sel === "[data-ev]") return "ev" in this.dataset; if (sel === "[data-day]") return "day" in this.dataset; if (sel === ".chip[data-cal]") return this._chip && "cal" in this.dataset; return false; } }
+const ctx = { HTMLElement, Element, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, parseInt, addEventListener() {}, removeEventListener() {} };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(src, ctx);
 const Card = defs["homestead-month-card"];
 let fails = 0;
@@ -65,13 +67,52 @@ check("rubber filter def present once", (h.match(/feTurbulence/g) || []).length 
 
 el._nav(1); await tick(); await tick();
 const h2 = el.shadowRoot.innerHTML;
-check("nav +1: OCTOBER 2026 + return badge, no today cell", h2.includes("OCTOBER 2026") && h2.includes("HOME RETURNS TO THE PRESENT") && !/class="dovl today"/.test(h2));
+check("nav +1: OCTOBER 2026 + return button, no today cell", h2.includes("OCTOBER 2026") && h2.includes('class="ret" data-nav="0"') && h2.includes("RETURN TO THE PRESENT") && !/class="dovl today"/.test(h2));
 check("nav +1: no agates in October either", !/\d+\/\d+</.test(h2.split('class="grid"')[1] || ""));
 check("nav +1: Halloween printed", h2.includes("Halloween"));
 el._nav(0, true); await tick(); await tick();
 const h3 = el.shadowRoot.innerHTML;
-check("HOME returns: September + today box back, badge gone", h3.includes("SEPTEMBER 2026") && /class="dovl today"/.test(h3) && !h3.includes("HOME RETURNS"));
-check("footer carries the key hint", h3.includes("keys turn the month; HOME returns."));
+check("HOME returns: September + today box back, return button gone", h3.includes("SEPTEMBER 2026") && /class="dovl today"/.test(h3) && !h3.includes("RETURN TO THE PRESENT"));
+check("footer carries the swipe/tap and key hints", h3.includes("Swipe or tap PREV / NEXT to turn the month") && h3.includes("Keys: ← → (PgUp PgDn, p n) turn the month, Shift+← → a year, Home or t returns."));
+check("masthead carries PREV and NEXT buttons around the month", /<button class="nav" data-nav="-1"[^>]*>‹ PREV<\/button><span class="month">SEPTEMBER 2026<\/span><button class="nav" data-nav="1"[^>]*>NEXT ›<\/button>/.test(h3));
+// ---- month controls: tapping the buttons, swiping the grid, year jumps, read-only walls
+{
+  const path = (ds) => ({ composedPath: () => [new ctx.Element(ds)] });
+  el._onTap(path({ nav: "1" })); await tick(); await tick();
+  check("tap NEXT → October", el._offset === 1 && el.shadowRoot.innerHTML.includes("OCTOBER 2026"));
+  el._onTap(path({ nav: "-1" })); el._onTap(path({ nav: "-1" })); await tick(); await tick();
+  check("tap PREV twice → August", el._offset === -1 && el.shadowRoot.innerHTML.includes("AUGUST 2026"));
+  el._onTap(path({ nav: "0" })); await tick(); await tick();
+  check("tap RETURN → September, today boxed", el._offset === 0 && /class="dovl today"/.test(el.shadowRoot.innerHTML));
+  el._swipeStart({ touches: [{ clientX: 400, clientY: 300 }] }); el._swipeEnd({ changedTouches: [{ clientX: 250, clientY: 310 }] }); await tick(); await tick();
+  check("swipe left → next month", el._offset === 1);
+  el._swipeStart({ touches: [{ clientX: 200, clientY: 300 }] }); el._swipeEnd({ changedTouches: [{ clientX: 420, clientY: 280 }] }); await tick();
+  check("swipe right → back", el._offset === 0);
+  el._swipeStart({ touches: [{ clientX: 200, clientY: 300 }] }); el._swipeEnd({ changedTouches: [{ clientX: 230, clientY: 310 }] });
+  check("a 30px nudge is not a swipe", el._offset === 0);
+  el._swipeStart({ touches: [{ clientX: 200, clientY: 100 }] }); el._swipeEnd({ changedTouches: [{ clientX: 300, clientY: 400 }] });
+  check("a mostly-vertical drag (scroll) is not a swipe", el._offset === 0);
+  el.connectedCallback();
+  el._key({ key: "ArrowRight", shiftKey: true, target: { tagName: "DIV" } }); await tick();
+  check("Shift+→ jumps a year", el._offset === 12 && el.shadowRoot.innerHTML.includes("SEPTEMBER 2027"));
+  el._key({ key: "ArrowLeft", shiftKey: true, target: { tagName: "DIV" } }); el._key({ key: ".", target: { tagName: "DIV" } }); el._key({ key: ",", target: { tagName: "DIV" } }); el._key({ key: "N", target: { tagName: "DIV" } });
+  check("Shift+← back a year; . , N step by one", el._offset === 1);
+  el._key({ key: "ArrowRight", ctrlKey: true, target: { tagName: "DIV" } });
+  check("Ctrl+→ (a browser shortcut) is ignored", el._offset === 1);
+  el._key({ key: "t", target: { tagName: "DIV" } }); await tick();
+  check("t returns to the present", el._offset === 0);
+  el._nav(1); el._openDay("2026-10-05"); el._nav(0, true);
+  check("turning the page closes an open clipping", el._pop === null);
+  const ro = new Card(); ro.setConfig(Object.assign({ tap: false }, cfg)); ro.hass = hass; await tick(); await tick();
+  ro._onTap(path({ nav: "1" })); await tick(); await tick();
+  check("tap: false still turns the month from the buttons", ro._offset === 1 && ro.shadowRoot.innerHTML.includes('data-nav="-1"'));
+  ro._onTap(path({ day: "2026-10-05" }));
+  check("…but still opens no clippings", !ro._pop);
+  const nn = new Card(); nn.setConfig(Object.assign({ navigation: false }, cfg)); nn.hass = hass; await tick(); await tick();
+  nn._swipeStart({ touches: [{ clientX: 400, clientY: 300 }] }); nn._swipeEnd({ changedTouches: [{ clientX: 250, clientY: 310 }] });
+  check("navigation: false hides the buttons and ignores swipes; keys still work", !nn.shadowRoot.innerHTML.includes("data-nav") && nn._offset === 0 && (nn.connectedCallback(), nn._key({ key: "ArrowRight", target: { tagName: "DIV" } }), nn._offset === 1));
+  nn.disconnectedCallback(); ro.disconnectedCallback();
+}
 check("big cake stamp on the birthday cell", (h3.match(/class="bigstamp"/g) || []).length === 1 && h3.includes('class="stamp big"'));
 check("inline cake suppressed when big cake present", !/Sarah&#39;s Birthday<\/span><svg class="stamp"/.test(h3));
 check("sizes in vmin, page height stays 100vh", h3.includes("2.2vmin") && h3.includes("height: 100vh"));
