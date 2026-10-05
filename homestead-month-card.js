@@ -4,7 +4,7 @@
  * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
  * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
  * and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.18";
+const HCM_VERSION = "2026.9.19";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -54,6 +54,8 @@ class HomesteadMonthCard extends HTMLElement {
       tap: true, popup_seconds: 20, isolate_seconds: 6, navigation: true,
       // a running-head button that leaves the wall for the paper's front page ("" hides it)
       paper_path: "/the-almanac/front", paper_label: "THE PAPER",
+      // a to-do list entity that remembers hidden events (one item per event id), shared by every screen; "" disables hiding
+      hidden_list: "",
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
@@ -63,6 +65,7 @@ class HomesteadMonthCard extends HTMLElement {
     this._rules = [...(c.stamps || []).map((s, i) => ({ re: compile(s, i), stamp: s.stamp })), ...DEFAULT_STAMPS.map((s) => ({ re: new RegExp(s.match, "i"), stamp: s.stamp }))];
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._sig = null; this._events = null; this._spans = null; this._fetchAt = 0; this._fetchKey = ""; this._evKey = ""; this._offset = 0;
+    this._hidden = new Set(); this._hiddenRecs = []; this._confirmDel = null;
     // a new config retires any fetch still in flight: its result is checked against this number after the await
     this._fetchSeq = (this._fetchSeq || 0) + 1; this._fetching = false;
     if (this._fontsReady === undefined) {
@@ -97,7 +100,7 @@ class HomesteadMonthCard extends HTMLElement {
     }
     if (typeof matchMedia === "function") { this._mq = matchMedia("(orientation: portrait)"); this._mqf = () => { this._sig = null; this._render(); }; try { this._mq.addEventListener("change", this._mqf); } catch (e) { /* older webview */ } }
   }
-  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); clearTimeout(this._popT); clearTimeout(this._isoT); }
+  disconnectedCallback() { clearInterval(this._tick); if (this._key) window.removeEventListener("keydown", this._key); if (this._mq && this._mqf) { try { this._mq.removeEventListener("change", this._mqf); } catch (e) { /* older webview */ } } clearTimeout(this._ret); clearTimeout(this._popT); clearTimeout(this._isoT); clearTimeout(this._delT); }
   _dispDate() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth() + this._offset, 1); }
   _nav(delta, home) {
     this._offset = home ? 0 : this._offset + delta;
@@ -134,7 +137,13 @@ class HomesteadMonthCard extends HTMLElement {
     const seq = this._fetchSeq;
     try {
       const { start, end } = this._range(disp);
-      const map = {}; const spans = []; const byId = {};
+      const map = {}; const spans = []; const byId = {}; const hiddenRecs = [];
+      // the hidden set first: one to-do item per event id, kept in Home Assistant so every screen agrees
+      let hidden = this._hidden || new Set();
+      if (this._cfg.hidden_list && this._hass.callWS) {
+        try { const r = await this._hass.callWS({ type: "todo/item/list", entity_id: this._cfg.hidden_list }); hidden = new Set(((r && r.items) || []).map((i) => i.summary)); }
+        catch (e) { /* keep the last known set */ }
+      }
       await Promise.all(this._cfg.calendars.map(async (cal) => {
         try {
           const evs = await this._hass.callApi("get", `calendars/${cal.entity}?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`);
@@ -142,32 +151,37 @@ class HomesteadMonthCard extends HTMLElement {
           for (const ev of evs || []) {
             const sum = ev.summary || "";
             const stamp = this._stampFor(sum) || cal.stamp || "";
-            const id = `${cal.entity}|${ev.uid || n}`; n++;
+            // one id per instance: a recurring series shares a uid, so the recurrence id tells its days apart
+            const id = `${cal.entity}|${ev.uid || n}${ev.recurrence_id ? "|" + ev.recurrence_id : ""}`; n++;
             // the full record, for the clipping that opens on tap
-            const rec = { id, cal: cal.entity, calName: cal.name, color: cal.color, stamp, sum, desc: ev.description || "", loc: ev.location || "", start: ev.start, end: ev.end, allDay: !!(ev.start && ev.start.date), s: "", e: "", t: "" };
+            const rec = { id, cal: cal.entity, calName: cal.name, color: cal.color, stamp, sum, desc: ev.description || "", loc: ev.location || "", start: ev.start, end: ev.end, allDay: !!(ev.start && ev.start.date), s: "", e: "", t: "", uid: ev.uid || "", rid: ev.recurrence_id || "", hidden: hidden.has(id) };
+            let item = null, span = null;
             if (ev.start && ev.start.date) {
               const s = ev.start.date;
               const eDate = new Date(((ev.end && ev.end.date) || s) + "T00:00:00"); eDate.setDate(eDate.getDate() - 1); // end date is exclusive
               const eInc = ymd(eDate) < s ? s : ymd(eDate);
               rec.s = s; rec.e = eInc;
-              if (eInc > s) spans.push({ s, e: eInc, sum, color: cal.color, stamp, id, cal: cal.entity });
-              else (map[s] = map[s] || []).push({ t: "", sort: -1, sum, color: cal.color, allDay: true, stamp, id, cal: cal.entity });
+              if (eInc > s) span = { s, e: eInc, sum, color: cal.color, stamp, id, cal: cal.entity };
+              else item = { day: s, ev: { t: "", sort: -1, sum, color: cal.color, allDay: true, stamp, id, cal: cal.entity } };
             } else if (ev.start && ev.start.dateTime) {
               const d = new Date(ev.start.dateTime);
               const endRaw = ev.end && ev.end.dateTime ? new Date(new Date(ev.end.dateTime).getTime() - 60000) : d; // a midnight end belongs to the prior day
               const sDay = ymd(d), eDay = ymd(endRaw < d ? d : endRaw);
               rec.s = sDay; rec.e = eDay; rec.t = fmtT(ev.start.dateTime);
-              if (eDay > sDay) spans.push({ s: sDay, e: eDay, sum, color: cal.color, stamp, t: fmtT(ev.start.dateTime), id, cal: cal.entity });
-              else (map[sDay] = map[sDay] || []).push({ t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp, id, cal: cal.entity });
+              if (eDay > sDay) span = { s: sDay, e: eDay, sum, color: cal.color, stamp, t: fmtT(ev.start.dateTime), id, cal: cal.entity };
+              else item = { day: sDay, ev: { t: fmtT(ev.start.dateTime), sort: d.getHours() * 60 + d.getMinutes(), sum, color: cal.color, allDay: false, stamp, id, cal: cal.entity } };
             } else continue;
             byId[id] = rec;
+            // a hidden event keeps its record (the day clipping lists it struck through) but leaves the grid
+            if (rec.hidden) { hiddenRecs.push(rec); continue; }
+            if (span) spans.push(span); else (map[item.day] = map[item.day] || []).push(item.ev);
           }
         } catch (e) { /* calendar unavailable this pass */ }
       }));
       if (seq !== this._fetchSeq) return;
       for (const k of Object.keys(map)) map[k].sort((a, b) => a.sort - b.sort);
       spans.sort((a, b) => (a.s < b.s ? -1 : 1));
-      this._events = map; this._spans = spans; this._byId = byId; this._fetchAt = Date.now(); this._fetchKey = key;
+      this._events = map; this._spans = spans; this._byId = byId; this._hidden = hidden; this._hiddenRecs = hiddenRecs; this._fetchAt = Date.now(); this._fetchKey = key;
       // no _sig reset here: the signature carries the event key, so an unchanged month is left as it stands
       this._evKey = evKey(map, spans); this._render();
     } finally { if (seq === this._fetchSeq) this._fetching = false; }
@@ -291,6 +305,8 @@ class HomesteadMonthCard extends HTMLElement {
     if (!this._cfg.tap) return;
     const pop = this.shadowRoot.getElementById("pop");
     const inPop = pop && path.includes(pop);
+    const actEl = hit("[data-act]");
+    if (actEl && actEl.dataset.act) { this._act(actEl.dataset.act); return; }
     const evEl = hit("[data-ev]"), dayEl = hit("[data-day]"), calEl = hit(".chip[data-cal]");
     if (evEl && evEl.dataset.ev && this._byId && this._byId[evEl.dataset.ev]) { this._openEvent(evEl.dataset.ev); return; }
     if (!inPop && dayEl && dayEl.dataset.day) { this._openDay(dayEl.dataset.day); return; }
@@ -315,30 +331,57 @@ class HomesteadMonthCard extends HTMLElement {
     try { window.history.pushState(null, "", path); window.dispatchEvent(new Event("location-changed")); }
     catch (e) { if (typeof location !== "undefined") location.assign(path); }
   }
+  // a calendar Home Assistant can write to (local calendars; feeds and read-only mirrors cannot)
+  _canDelete(cal) { const st = this._hass && this._hass.states && this._hass.states[cal]; return !!(st && ((st.attributes.supported_features || 0) & 2)); }
   _openEvent(id) {
     const r = this._byId && this._byId[id]; if (!r) return;
+    this._popId = id;
     const { date, time } = this._fmtRange(r);
     const body = r.desc ? esc(r.desc.trim()).replace(/\n/g, "<br>") : "";
-    this._pop = { html: `<div class="scrim"></div><div class="clip" style="--hl:${esc(r.color)}"><div class="tape"></div>
-      <div class="kick">${esc(date)} · ${esc(time)}</div>
-      <div class="ttl">${esc(r.sum)}</div>
+    const canHide = !!this._cfg.hidden_list, canDel = this._canDelete(r.cal);
+    const acts = canHide || canDel ? `<div class="acts">${canHide ? (r.hidden ? '<button class="act" data-act="unhide">SHOW ON THE WALL</button>' : '<button class="act" data-act="hide">HIDE FROM THE WALL</button>') : ""}${canDel ? `<button class="act del" data-act="del">${this._confirmDel === id ? "TAP AGAIN TO DELETE" : "DELETE"}</button>` : ""}</div>` : "";
+    this._pop = { html: `<div class="scrim"></div><div class="clip${r.hidden ? " hidden" : ""}" style="--hl:${esc(r.color)}"><div class="tape"></div>
+      <div class="kick">${esc(date)} · ${esc(time)}${r.hidden ? " · HIDDEN FROM THE WALL" : ""}</div>
+      <div class="ttl${r.hidden ? " hid" : ""}">${esc(r.sum)}</div>
       ${r.loc ? `<div class="agate"><b>WHERE</b>${esc(r.loc)}</div>` : ""}
       ${body ? `<div class="body">${body}</div>` : ""}
+      ${acts}
       ${r.stamp ? `<div class="clipstamp">${this._stampSvg(r.stamp, "big")}</div>` : ""}
     </div>` };
     this._paintPop();
   }
+  // the clipping's buttons: hide / show on the wall (a to-do item per event id), and delete on a writable calendar
+  async _act(act) {
+    const r = this._byId && this._byId[this._popId]; if (!r || !this._hass) return;
+    if (act === "del") {
+      if (!this._canDelete(r.cal)) return;
+      // a wall tablet gets no confirm dialog: the first tap arms the button, the second within 6 s deletes
+      if (this._confirmDel !== r.id) { this._confirmDel = r.id; clearTimeout(this._delT); this._delT = setTimeout(() => { this._confirmDel = null; if (this._pop && this._popId === r.id) this._openEvent(r.id); }, 6000); this._openEvent(r.id); return; }
+      this._confirmDel = null; clearTimeout(this._delT);
+    }
+    try {
+      if (act === "hide") await this._hass.callService("todo", "add_item", { item: r.id, description: `${r.sum} · ${r.s}` }, { entity_id: this._cfg.hidden_list });
+      else if (act === "unhide") await this._hass.callService("todo", "remove_item", { item: r.id }, { entity_id: this._cfg.hidden_list });
+      else if (act === "del") await this._hass.callWS(Object.assign({ type: "calendar/event/delete", entity_id: r.cal, uid: r.uid }, r.rid ? { recurrence_id: r.rid, recurrence_range: "" } : {}));
+      else return;
+    } catch (e) { /* the clipping stays; the next fetch prints the truth */ }
+    this._closePop(); this._fetchAt = 0; this._maybeFetch();
+  }
   _openDay(k) {
     const evs = ((this._events && this._events[k]) || []).slice();
     const spans = (this._spans || []).filter((sp) => sp.s <= k && sp.e >= k);
+    // hidden events still appear here, struck through, so they can be found and shown again
+    const hid = (this._hiddenRecs || []).filter((r) => r.s <= k && r.e >= k).map((r) => ({ id: r.id, color: r.color, when: r.allDay ? "all day" : r.t, what: r.sum, stamp: r.stamp, hidden: true }));
     const rows = [...spans.map((sp) => ({ id: sp.id, color: sp.color, when: sp.t || "all day", what: sp.sum, stamp: sp.stamp })),
       ...evs.filter((e) => e.allDay).map((e) => ({ id: e.id, color: e.color, when: "all day", what: e.sum, stamp: e.stamp })),
-      ...evs.filter((e) => !e.allDay).map((e) => ({ id: e.id, color: e.color, when: e.t, what: e.sum, stamp: e.stamp }))];
+      ...evs.filter((e) => !e.allDay).map((e) => ({ id: e.id, color: e.color, when: e.t, what: e.sum, stamp: e.stamp })),
+      ...hid];
+    const shown = rows.length - hid.length;
     const [y, m, d] = k.split("-").map(Number); const dt = new Date(y, m - 1, d);
     const hol = this._cfg.show_holidays ? this._holidays(y)[`${pad2(m)}-${pad2(d)}`] : "";
-    const list = rows.length ? rows.map((r) => `<div class="row" data-ev="${esc(r.id || "")}" style="--hl:${esc(r.color)}"><span class="when">${esc(r.when)}</span><span class="what">${esc(r.what)}</span>${r.stamp ? this._stampSvg(r.stamp) : ""}</div>`).join("") : `<div class="agate">Nothing on the books. A quiet day, or an unrecorded one.</div>`;
+    const list = rows.length ? rows.map((r) => `<div class="row${r.hidden ? " hid" : ""}" data-ev="${esc(r.id || "")}" style="--hl:${esc(r.color)}"><span class="when">${esc(r.when)}</span><span class="what">${esc(r.what)}</span>${r.stamp ? this._stampSvg(r.stamp) : ""}</div>`).join("") : `<div class="agate">Nothing on the books. A quiet day, or an unrecorded one.</div>`;
     this._pop = { html: `<div class="scrim"></div><div class="clip day" style="--hl:${INK}"><div class="tape"></div>
-      <div class="kick">${DOW[dt.getDay()]} · ${MONTHS[m - 1]} ${d} · ${rows.length} ${rows.length === 1 ? "entry" : "entries"}${hol ? " · " + esc(hol).toUpperCase() : ""}</div>
+      <div class="kick">${DOW[dt.getDay()]} · ${MONTHS[m - 1]} ${d} · ${shown} ${shown === 1 ? "entry" : "entries"}${hid.length ? ` · ${hid.length} hidden` : ""}${hol ? " · " + esc(hol).toUpperCase() : ""}</div>
       <div class="ttl">The day, in full</div>
       <div class="list">${list}</div>
     </div>` };
@@ -441,7 +484,15 @@ class HomesteadMonthCard extends HTMLElement {
   .list { margin-top: 0.4vmin; max-height: 60vh; overflow: hidden; }
   .clip .row { display: flex; align-items: center; gap: 0.6vw; padding: 0.55vmin 0.6vw; margin: 0.4vmin 0; background: color-mix(in srgb, var(--hl) 26%, transparent); border-left: 0.3vw solid var(--hl); font-size: 1.8vmin; }
   .clip .row .when { font-weight: 700; flex: none; min-width: 7.5vmin; color: #241c12; }
-  .clip .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }`;
+  .clip .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  /* hidden events: struck through in the day list, and the clipping's title */
+  .clip .row.hid { opacity: .45; }
+  .clip .row.hid .what, .ttl.hid { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .ttl.hid { opacity: .55; }
+  .acts { display: flex; flex-wrap: wrap; gap: 0.8vw; margin-top: 1.4vmin; padding-right: 6vmin; }
+  .act { font-family: Archivo, 'Segoe UI', sans-serif; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${BROWN}; background: transparent; border: 1.5px solid ${BROWN}; border-radius: 0; padding: 0 1.2vw; min-height: 4.2vmin; cursor: pointer; white-space: nowrap; user-select: none; -webkit-tap-highlight-color: transparent; }
+  .act:active { background: color-mix(in srgb, ${BROWN} 18%, transparent); }
+  .act.del { color: #7e1d10; border-color: #7e1d10; }`;
   }
 }
 

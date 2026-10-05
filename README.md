@@ -13,6 +13,7 @@
 - **Holidays computed in-card** (US fixed and floating: Labor Day, Thanksgiving, Easter by the computus, St. Patrick's, and friends) printed in italics in the cell — so a Celebrations calendar can hold birthdays and anniversaries only.
 - **Past days struck through in pencil** — the way she crosses them off — and **today boxed in ink** with a tilted TODAY stamp.
 - **Tap for the clipping.** Tap any event and a newspaper clipping pins itself over the grid: the date and time (or the span and its nights) — the calendar is the clipping's colored edge, the full title, WHERE, the description as body copy, and the event's rubber stamp pressed in the corner. Tap a day number (or "and 3 more, see inside") for that day in full; tap a legend chip to fade every other calendar for a moment. Tap anywhere or press Esc to close; it fades on its own after `popup_seconds`.
+- **Hide, show, delete — from the wall.** Every clipping has **HIDE FROM THE WALL**: the event leaves the grid but stays in the day clipping, greyed and struck through, where a tap brings it back with **SHOW ON THE WALL**. Hidden ids live in a Home Assistant to-do list (`hidden_list`), so phones, the wall and the briefings agree. Calendars Home Assistant can write to (local calendars) also get **DELETE**, armed by one tap and fired by a second within six seconds — a single instance of a recurring event, never the series.
 
 Read-only and data-dense; sizing is vmin-based, so **landscape and portrait both work** — portrait (like the paper calendar) gets taller cells and a higher event cap. Any day with a birthday takes a **big cake stamp** pressed across the cell. Refreshes every 15 minutes and rolls to the new month on its own.
 
@@ -57,6 +58,7 @@ views:
 | `stamps` | `[]` | Extra rules `[{match, stamp}]` tried before the built-ins; stamps: `cake` `rings` `bell` `ball` `plane` `cross` `star` `suitcase` |
 | `auto_return` | `300` | Seconds off-month before snapping back to today (0 = never) |
 | `navigation` | `true` | PREV / NEXT / RETURN buttons in the masthead and swipe-to-turn on touch screens (keys always work) |
+| `hidden_list` | `""` | A to-do list entity (make a Local To-do list, e.g. `todo.calendar_hidden_events`) that stores hidden event ids. Unset = no hide button |
 | `paper_path`, `paper_label` | `/the-almanac/front`, `THE PAPER` | A running-head button at the left of the month line that leaves the wall for another dashboard (in-app navigation, kiosk-mode intact). `paper_path: ""` hides it |
 | `tap` | `true` | Tap events, day numbers and legend chips (set `false` for a strictly read-only wall) |
 | `popup_seconds` | `20` | How long a clipping stays up before fading on its own (0 = until tapped) |

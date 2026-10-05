@@ -2,12 +2,12 @@
 import fs from "node:fs"; import vm from "node:vm";
 const src = fs.readFileSync(new URL("./homestead-month-card.js", import.meta.url), "utf8");
 // the shadow root counts innerHTML assignments (`_sets`) so the render-dedupe checks can see a swap that should not happen
-class HTMLElement { constructor() { this._sr = null; this.style = {}; this._sets = 0; } attachShadow() { const self = this; let html = ""; this._sr = { get innerHTML() { return html; }, set innerHTML(v) { html = v; self._sets++; }, addEventListener() {} }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
+class HTMLElement { constructor() { this._sr = null; this.style = {}; this._sets = 0; } attachShadow() { const self = this; let html = ""; this._sr = { get innerHTML() { return html; }, set innerHTML(v) { html = v; self._sets++; }, addEventListener() {}, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] }; return this._sr; } get shadowRoot() { return this._sr; } dispatchEvent() {} }
 const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
 // a stand-in for DOM elements on a tap path: `matches` understands the four selectors the card uses
-class Element { constructor(ds, chip) { this.dataset = ds || {}; this._chip = !!chip; } matches(sel) { if (sel === "[data-go]") return "go" in this.dataset; if (sel === "[data-nav]") return "nav" in this.dataset; if (sel === "[data-ev]") return "ev" in this.dataset; if (sel === "[data-day]") return "day" in this.dataset; if (sel === ".chip[data-cal]") return this._chip && "cal" in this.dataset; return false; } }
+class Element { constructor(ds, chip) { this.dataset = ds || {}; this._chip = !!chip; } matches(sel) { if (sel === "[data-act]") return "act" in this.dataset; if (sel === "[data-go]") return "go" in this.dataset; if (sel === "[data-nav]") return "nav" in this.dataset; if (sel === "[data-ev]") return "ev" in this.dataset; if (sel === "[data-day]") return "day" in this.dataset; if (sel === ".chip[data-cal]") return this._chip && "cal" in this.dataset; return false; } }
 const nav = { pushed: [], events: [] };
 const ctx = { HTMLElement, Element, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, parseInt, addEventListener() {}, removeEventListener() {}, history: { pushState: (s, t, p) => nav.pushed.push(p) }, dispatchEvent: (e) => nav.events.push(e.type), Event: class { constructor(t) { this.type = t; } } };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(src, ctx);
@@ -208,5 +208,54 @@ check("invalid stamps regex throws a config error naming the rule", (() => { try
   check("setConfig mid-fetch: the stale calendar result is discarded", e._events === null && e._fetchAt === 0 && !e.shadowRoot.innerHTML.includes("Stale event"));
   e.hass = { states: {}, callApi: async () => [{ summary: "Fresh event", start: { date: "2026-09-12" }, end: { date: "2026-09-13" } }] }; await tick(); await tick();
   check("…and the next hass fetches afresh for the new config", e._fetchAt > 0 && e.shadowRoot.innerHTML.includes("Fresh event"));
+}
+// ---- hide / show on the wall (a to-do list of event ids) and delete on a writable calendar
+{
+  const todo = []; const deleted = [];
+  const hassH = { states: { "calendar.henry": { state: "off", attributes: { supported_features: 7 } }, "calendar.family": { state: "off", attributes: { supported_features: 0 } } },
+    callApi: hass.callApi,
+    callWS: async (m) => { if (m.type === "todo/item/list") return { items: todo.map((s) => ({ summary: s, status: "needs_action" })) }; if (m.type === "calendar/event/delete") { deleted.push(m); return null; } return null; },
+    callService: async (d, s, data) => { if (d === "todo" && s === "add_item") todo.push(data.item); if (d === "todo" && s === "remove_item") { const i = todo.indexOf(data.item); if (i >= 0) todo.splice(i, 1); } } };
+  const cfgH = Object.assign({ hidden_list: "todo.calendar_hidden_events" }, cfg);
+  const mk = async () => { const e = new Card(); e.setConfig(cfgH); e.hass = hassH; await tick(); await tick(); await tick(); return e; };
+  const path = (ds) => ({ composedPath: () => [new ctx.Element(ds)] });
+  let e = await mk();
+  const popId = Object.keys(e._byId).find((k) => e._byId[k].sum.startsWith("Popcorn"));
+  check("ids carry the recurrence id when present (none here) and uid", popId === "calendar.henry|1" || /^calendar\.henry\|/.test(popId));
+  e._openEvent(popId);
+  check("clipping offers HIDE FROM THE WALL and DELETE on a writable calendar", e._pop.html.includes('data-act="hide">HIDE FROM THE WALL') && e._pop.html.includes('data-act="del">DELETE<'));
+  const midwayId = Object.keys(e._byId).find((k) => /Midway/.test(e._byId[k].sum)); e._openEvent(midwayId);
+  check("family (read-only, features 0) gets HIDE but no DELETE", e._pop.html.includes("HIDE FROM THE WALL") && !e._pop.html.includes('data-act="del"'));
+  e._openEvent(popId); e._onTap(path({ act: "hide" })); await tick(); await tick(); await tick();
+  const g = e.shadowRoot.innerHTML;
+  check("hide: to-do item written, popcorn gone from the grid, clipping closed", todo.includes(popId) && !g.includes("Popcorn sales") && e._pop === null);
+  e._openDay("2026-09-11");
+  const dp = e._pop.html;
+  check("day clipping lists the hidden event struck through with a hidden count", /class="row hid" data-ev="calendar\.henry\|[^"]+"[^>]*><span class="when">4p<\/span><span class="what">Popcorn sales/.test(dp) && dp.includes("0 entries · 1 hidden"));
+  e._onTap(path({ ev: popId })); await tick();
+  check("tapping the struck row opens the clipping with SHOW ON THE WALL + HIDDEN kicker", e._pop.html.includes('data-act="unhide">SHOW ON THE WALL') && e._pop.html.includes("HIDDEN FROM THE WALL") && e._pop.html.includes('class="ttl hid"'));
+  e._onTap(path({ act: "unhide" })); await tick(); await tick(); await tick();
+  check("unhide: to-do item removed, popcorn back on the grid", !todo.includes(popId) && e.shadowRoot.innerHTML.includes("Popcorn sales"));
+  // delete: first tap arms, second deletes a single instance; nothing happens on a read-only calendar
+  e._openEvent(popId); e._onTap(path({ act: "del" })); await tick();
+  check("delete first tap only arms the button", deleted.length === 0 && e._pop && e._pop.html.includes("TAP AGAIN TO DELETE"));
+  e._onTap(path({ act: "del" })); await tick(); await tick();
+  check("delete second tap calls calendar/event/delete with the uid", deleted.length === 1 && deleted[0].entity_id === "calendar.henry" && typeof deleted[0].uid === "string" && e._pop === null);
+  e._openEvent(midwayId); e._onTap(path({ act: "del" })); e._onTap(path({ act: "del" })); await tick();
+  check("delete on a read-only calendar is ignored", deleted.length === 1);
+  // a hidden multi-day span shows struck on each of its days; recurring instances hide one day only
+  const hassR = Object.assign({}, hassH, { callApi: async (m, url) => { const ent = url.split("?")[0].replace("calendars/", ""); if (ent === "calendar.henry") return [
+    { summary: "Den meeting", uid: "den@ha.local", recurrence_id: "20260908T183000", start: { dateTime: "2026-09-08T18:30:00-07:00" }, end: { dateTime: "2026-09-08T19:30:00-07:00" } },
+    { summary: "Den meeting", uid: "den@ha.local", recurrence_id: "20260915T183000", start: { dateTime: "2026-09-15T18:30:00-07:00" }, end: { dateTime: "2026-09-15T19:30:00-07:00" } },
+    { summary: "Try Scuba", uid: "scuba@x", start: { date: "2026-09-24" }, end: { date: "2026-09-27" } }]; return []; } });
+  todo.length = 0; todo.push("calendar.henry|den@ha.local|20260915T183000", "calendar.henry|scuba@x");
+  const r = new Card(); r.setConfig(cfgH); r.hass = hassR; await tick(); await tick(); await tick();
+  const gr = r.shadowRoot.innerHTML;
+  check("recurring: the hidden instance leaves the grid, the other stays", (gr.match(/Den meeting/g) || []).length === 1 && !gr.includes("Try Scuba"));
+  r._openDay("2026-09-25");
+  check("hidden multi-day span is struck on a middle day", /class="row hid"[^>]*><span class="when">all day<\/span><span class="what">Try Scuba/.test(r._pop.html));
+  const plain = new Card(); plain.setConfig(cfg); plain.hass = hassH; await tick(); await tick(); plain._openEvent(Object.keys(plain._byId).find((k) => plain._byId[k].sum.startsWith("Popcorn")));
+  check("no hidden_list: no HIDE button (DELETE still offered on a writable calendar)", !plain._pop.html.includes("HIDE FROM") && plain._pop.html.includes('data-act="del"'));
+  e.disconnectedCallback(); r.disconnectedCallback(); plain.disconnectedCallback();
 }
 console.log(fails ? `\n${fails} FAILED` : "\nall passed"); process.exit(fails ? 1 : 0);
