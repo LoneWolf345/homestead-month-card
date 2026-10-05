@@ -52,6 +52,7 @@ check("legend chips", (h.match(/class="chip"/g) || []).length === 3);
 check("day-count agate removed", !h.includes("250/115") && !h.includes('class="agate"'));
 check("timed multi-day → ONE continuous lane Fri–Sun with 12a start time, plane once", (h.match(/Midway sleepover/g) || []).length === 1 && /grid-column:5\/8;grid-row:4"><span class="txt"><b>12a<\/b> Midway sleepover/.test(h) && (h.match(/M8 19 l16 -7/g) || []).length === 1);
 check("overnight timed event (10p–2a) is one lane over two days", (h.match(/Late shift/g) || []).length === 1 && /grid-column:2\/4;grid-row:4"><span class="txt"><b>10p<\/b> Late shift/.test(h));
+check("Easter computed: 2026-04-05, 2027-03-28, 2024-03-31; St. Patrick's fixed", (() => { const e = (y) => Object.entries(el._holidays(y)).find(([, v]) => v === "Easter")[0]; return e(2026) === "04-05" && e(2027) === "03-28" && e(2024) === "03-31" && el._holidays(2026)["03-17"] === "St. Patrick's Day"; })());
 check("Labor Day printed Sep 7 with star stamp", h.includes("Labor Day") && (h.match(/#st|star|hs/g) || []).length > 0 && h.includes('class="stamp hs"'));
 check("today overlay + TODAY tag on the 5th", (h.match(/class="dovl today"/g) || []).length === 1 && h.includes(">TODAY<"));
 check("week starts Monday", /class="dow"><div>MONDAY<\/div>/.test(h) && h.includes("<div>SUNDAY</div></div>"));

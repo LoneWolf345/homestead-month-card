@@ -4,7 +4,7 @@
  * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
  * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
  * and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.16";
+const HCM_VERSION = "2026.9.17";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -185,12 +185,17 @@ class HomesteadMonthCard extends HTMLElement {
   }
   _holidays(y) {
     const h = {
-      "01-01": "New Year's Day", "02-14": "Valentine's Day", "06-19": "Juneteenth", "07-04": "Independence Day",
+      "01-01": "New Year's Day", "02-14": "Valentine's Day", "03-17": "St. Patrick's Day", "06-19": "Juneteenth", "07-04": "Independence Day",
       "10-31": "Halloween", "11-11": "Veterans Day", "12-24": "Christmas Eve", "12-25": "Christmas", "12-31": "New Year's Eve",
     };
     h[nth(y, 0, 1, 3)] = "M. L. King Jr. Day"; h[nth(y, 1, 1, 3)] = "Presidents' Day"; h[nth(y, 4, 0, 2)] = "Mother's Day";
     h[lastDow(y, 4, 1)] = "Memorial Day"; h[nth(y, 5, 0, 3)] = "Father's Day"; h[nth(y, 8, 1, 1)] = "Labor Day";
     h[nth(y, 9, 1, 2)] = "Columbus Day"; h[nth(y, 10, 4, 4)] = "Thanksgiving";
+    // Easter by the Gregorian computus (Meeus/Jones/Butcher)
+    const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
+      hh = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - hh - k) % 7, m = Math.floor((a + 11 * hh + 22 * l) / 451),
+      em = Math.floor((hh + l - 7 * m + 114) / 31), ed = ((hh + l - 7 * m + 114) % 31) + 1;
+    h[`${pad2(em)}-${pad2(ed)}`] = "Easter";
     return h;
   }
 
