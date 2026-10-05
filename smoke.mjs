@@ -7,8 +7,9 @@ const defs = {};
 class FakeDate extends Date { constructor(...a) { if (a.length) super(...a); else super(FakeDate._now); } static now() { return FakeDate._now; } }
 FakeDate._now = new Date(2026, 8, 5, 12, 0, 0).getTime(); // Sat Sep 5 2026
 // a stand-in for DOM elements on a tap path: `matches` understands the four selectors the card uses
-class Element { constructor(ds, chip) { this.dataset = ds || {}; this._chip = !!chip; } matches(sel) { if (sel === "[data-nav]") return "nav" in this.dataset; if (sel === "[data-ev]") return "ev" in this.dataset; if (sel === "[data-day]") return "day" in this.dataset; if (sel === ".chip[data-cal]") return this._chip && "cal" in this.dataset; return false; } }
-const ctx = { HTMLElement, Element, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, parseInt, addEventListener() {}, removeEventListener() {} };
+class Element { constructor(ds, chip) { this.dataset = ds || {}; this._chip = !!chip; } matches(sel) { if (sel === "[data-go]") return "go" in this.dataset; if (sel === "[data-nav]") return "nav" in this.dataset; if (sel === "[data-ev]") return "ev" in this.dataset; if (sel === "[data-day]") return "day" in this.dataset; if (sel === ".chip[data-cal]") return this._chip && "cal" in this.dataset; return false; } }
+const nav = { pushed: [], events: [] };
+const ctx = { HTMLElement, Element, customElements: { define: (n, c) => (defs[n] = c) }, document: { getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } }, console, setInterval: () => 0, clearInterval() {}, setTimeout, clearTimeout, Date: FakeDate, Math, encodeURIComponent, parseInt, addEventListener() {}, removeEventListener() {}, history: { pushState: (s, t, p) => nav.pushed.push(p) }, dispatchEvent: (e) => nav.events.push(e.type), Event: class { constructor(t) { this.type = t; } } };
 ctx.window = ctx; vm.createContext(ctx); vm.runInContext(src, ctx);
 const Card = defs["homestead-month-card"];
 let fails = 0;
@@ -74,6 +75,16 @@ el._nav(0, true); await tick(); await tick();
 const h3 = el.shadowRoot.innerHTML;
 check("HOME returns: September + today box back, return button gone", h3.includes("SEPTEMBER 2026") && /class="dovl today"/.test(h3) && !h3.includes("RETURN TO THE PRESENT"));
 check("footer carries the swipe/tap and key hints", h3.includes("Swipe or tap PREV / NEXT to turn the month") && h3.includes("Keys: ← → (PgUp PgDn, p n) turn the month, Shift+← → a year, Home or t returns."));
+check("masthead carries THE PAPER button to the front page", /<button class="nav paper" data-go="\/the-almanac\/front"[^>]*>‹ THE PAPER<\/button><span class="rule"><\/span>/.test(h3));
+{ const path = (ds) => ({ composedPath: () => [new ctx.Element(ds)] });
+  el._onTap(path({ go: "/the-almanac/front" }));
+  check("tap THE PAPER → pushState + location-changed, month untouched", nav.pushed[nav.pushed.length - 1] === "/the-almanac/front" && nav.events.includes("location-changed") && el._offset === 0);
+  const cp = new Card(); cp.setConfig(Object.assign({ paper_path: "/lovelace/0", paper_label: "HOME" }, cfg)); cp.hass = hass; await tick(); await tick();
+  check("paper_path/paper_label configurable", /data-go="\/lovelace\/0"[^>]*>‹ HOME</.test(cp.shadowRoot.innerHTML));
+  const np = new Card(); np.setConfig(Object.assign({ paper_path: "" }, cfg)); np.hass = hass; await tick(); await tick();
+  check("paper_path: '' hides the button", !np.shadowRoot.innerHTML.includes("data-go="));
+  const hostile = new Card(); hostile.setConfig(Object.assign({ paper_label: "<b>x</b>" }, cfg)); hostile.hass = hass; await tick(); await tick();
+  check("hostile paper label prints escaped", hostile.shadowRoot.innerHTML.includes("‹ &lt;b&gt;x&lt;/b&gt;</button>")); }
 check("masthead carries PREV and NEXT buttons around the month", /<button class="nav" data-nav="-1"[^>]*>‹ PREV<\/button><span class="month">SEPTEMBER 2026<\/span><button class="nav" data-nav="1"[^>]*>NEXT ›<\/button>/.test(h3));
 // ---- month controls: tapping the buttons, swiping the grid, year jumps, read-only walls
 {

@@ -4,7 +4,7 @@
  * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
  * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
  * and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.15";
+const HCM_VERSION = "2026.9.16";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -52,6 +52,8 @@ class HomesteadMonthCard extends HTMLElement {
       title: "The Homestead Times", subtitle: "CALENDAR & ALMANACK FOR THE HOUSEHOLD", show_holidays: true, strike_past: true,
       max_events: 7, max_events_portrait: 13, height: "100vh", stamps: [], auto_return: 300, week_start: "monday",
       tap: true, popup_seconds: 20, isolate_seconds: 6, navigation: true,
+      // a running-head button that leaves the wall for the paper's front page ("" hides it)
+      paper_path: "/the-almanac/front", paper_label: "THE PAPER",
       footer: "Published daily by the household press. Errors are the responsibility of the month.",
     }, config);
     c.calendars = c.calendars.map((x) => ({ entity: x.entity, name: x.name || x.entity.split(".")[1], color: x.color || TAN, stamp: x.stamp || "" }));
@@ -264,7 +266,7 @@ class HomesteadMonthCard extends HTMLElement {
       <feComposite in="SourceGraphic" in2="a" operator="in"/></filter></defs></svg>
     <div class="mast">
       <div class="mrow1"><span class="mvol">${esc(vol)} · ${esc(c.subtitle)}</span><span class="mname">${esc(c.title)}</span><span class="mleg">${legend}</span></div>
-      <div class="mrow2"><span class="rule"></span>${c.navigation ? '<button class="nav" data-nav="-1" aria-label="Previous month" title="Previous month (←)">‹ PREV</button>' : ""}<span class="month">${MONTHS[mo]} ${y}</span>${c.navigation ? '<button class="nav" data-nav="1" aria-label="Next month" title="Next month (→)">NEXT ›</button>' : ""}${this._offset !== 0 ? '<button class="ret" data-nav="0" aria-label="Return to the present" title="Return to today (Home)">RETURN TO THE PRESENT</button>' : ""}<span class="rule"></span></div>
+      <div class="mrow2">${c.paper_path ? `<button class="nav paper" data-go="${esc(c.paper_path)}" aria-label="Open the front page" title="Open ${esc(c.title)}">‹ ${esc(c.paper_label)}</button>` : ""}<span class="rule"></span>${c.navigation ? '<button class="nav" data-nav="-1" aria-label="Previous month" title="Previous month (←)">‹ PREV</button>' : ""}<span class="month">${MONTHS[mo]} ${y}</span>${c.navigation ? '<button class="nav" data-nav="1" aria-label="Next month" title="Next month (→)">NEXT ›</button>' : ""}${this._offset !== 0 ? '<button class="ret" data-nav="0" aria-label="Return to the present" title="Return to today (Home)">RETURN TO THE PRESENT</button>' : ""}<span class="rule"></span></div>
     </div>
     <div class="dow">${Array.from({ length: 7 }, (_, i) => `<div>${DOW[(this._ws() + i) % 7]}</div>`).join("")}</div>
     <div class="weeks">${cells.join("")}</div>
@@ -277,6 +279,8 @@ class HomesteadMonthCard extends HTMLElement {
     const path = e.composedPath ? e.composedPath() : [e.target];
     const hit = (sel) => path.find((n) => n instanceof Element && n.matches && n.matches(sel));
     // the month controls work even on a strictly read-only wall (tap: false): turning the page edits nothing
+    const goEl = hit("[data-go]");
+    if (goEl && goEl.dataset.go) { this._go(goEl.dataset.go); return; }
     const navEl = hit("[data-nav]");
     if (navEl) { const d = parseInt(navEl.dataset.nav, 10); this._nav(d === 0 ? 0 : d, d === 0); return; }
     if (!this._cfg.tap) return;
@@ -299,6 +303,12 @@ class HomesteadMonthCard extends HTMLElement {
     if (rec.allDay) return { date: long(rec.s), time: "All day" };
     const endT = rec.end && rec.end.dateTime ? fmtT(rec.end.dateTime) : "";
     return { date: long(rec.s), time: endT && endT !== rec.t ? `${rec.t} – ${endT}` : rec.t };
+  }
+  // Home Assistant's in-app navigation: push the path and tell the shell, so kiosk-mode and the
+  // sidebar state survive and the wall tablet does not do a full reload.
+  _go(path) {
+    try { window.history.pushState(null, "", path); window.dispatchEvent(new Event("location-changed")); }
+    catch (e) { if (typeof location !== "undefined") location.assign(path); }
   }
   _openEvent(id) {
     const r = this._byId && this._byId[id]; if (!r) return;
@@ -370,6 +380,7 @@ class HomesteadMonthCard extends HTMLElement {
   .nav, .ret { font-family: Archivo, 'Segoe UI', sans-serif; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.25vw; color: ${BROWN}; background: transparent; border: 1.5px solid ${BROWN}; border-radius: 0; padding: 0 1.2vw; min-height: 4.2vmin; min-width: 11vmin; cursor: pointer; white-space: nowrap; user-select: none; -webkit-tap-highlight-color: transparent; }
   .nav:active, .ret:active { background: color-mix(in srgb, ${BROWN} 18%, transparent); }
   .ret { color: ${TERRA}; border-color: ${TERRA}; transform: rotate(-2deg); margin-left: 0.6vw; }
+  .nav.paper { color: ${TAN}; border-color: ${TAN}; margin-right: 0.6vw; }
   .dow { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1.5px solid ${INK}; }
   .dow div { text-align: center; font-size: 1.25vmin; font-weight: 700; letter-spacing: 0.3vw; color: ${BROWN}; padding: 0.5vmin 0 0.4vmin; }
   .weeks { flex: 1; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid ${DOT}; border-right: 1px solid ${DOT}; }
