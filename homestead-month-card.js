@@ -4,7 +4,7 @@
  * pencil-struck past days, a boxed TODAY, and rubber stamps (cake, rings, bell, ball,
  * plane, cross, star, suitcase) inked beside birthdays, anniversaries, school closures
  * and the rest. Data-dense by design; tap an event for its clipping. */
-const HCM_VERSION = "2026.9.17";
+const HCM_VERSION = "2026.9.18";
 const INK = "#3a2d1f", PAPER = "#f3e7d3", TAN = "#a3876a", BROWN = "#7a6248",
   TERRA = "#c65f38", DOT = "#cfb894", GRAPHITE = "#55504a", STAMP = "#b03a26";
 const MONTHS = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
@@ -320,7 +320,7 @@ class HomesteadMonthCard extends HTMLElement {
     const { date, time } = this._fmtRange(r);
     const body = r.desc ? esc(r.desc.trim()).replace(/\n/g, "<br>") : "";
     this._pop = { html: `<div class="scrim"></div><div class="clip" style="--hl:${esc(r.color)}"><div class="tape"></div>
-      <div class="kick">${esc(r.calName)} · ${esc(date)} · ${esc(time)}</div>
+      <div class="kick">${esc(date)} · ${esc(time)}</div>
       <div class="ttl">${esc(r.sum)}</div>
       ${r.loc ? `<div class="agate"><b>WHERE</b>${esc(r.loc)}</div>` : ""}
       ${body ? `<div class="body">${body}</div>` : ""}
